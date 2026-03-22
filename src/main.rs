@@ -191,6 +191,10 @@ async fn upload(
                                         job_progress_clone.write().unwrap().error = Some(format!("Batch indexing error: {}", e));
                                         return;
                                     }
+                                    if let Err(e) = writer.commit() {
+                                        job_progress_clone.write().unwrap().error = Some(format!("Batch commit error: {}", e));
+                                        return;
+                                    }
                                     batch.clear();
                                     let mut prog = job_progress_clone.write().unwrap();
                                     prog.cards_indexed = total_indexed;
