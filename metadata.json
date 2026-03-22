@@ -1,0 +1,34 @@
+{
+  "name": "zhengming",
+  "project_name": "verbatim-parser-rs",
+  "version": "0.1.0",
+  "description": "A high-performance Rust service for parsing and indexing debate 'cards' from Microsoft Word (.docx) files into Zinc Search.",
+  "tech_stack": {
+    "backend": "Rust (Axum, Tokio, Rayon)",
+    "search": "Zinc Search",
+    "frontend": "HTML/JS/CSS (Vanilla)"
+  },
+  "features": [
+    "Fast .docx parsing using docx-rs",
+    "Parallel processing with Rayon",
+    "Bulk uploads via .zip files",
+    "Verbatim-specific metadata extraction (Hat, Block, Pocket, Tag, Cite, Body, Highlights, Underlines, Emphasis)",
+    "REST API for uploading and querying",
+    "Web-based frontend for search and upload"
+  ],
+  "dependencies": [
+    "tokio",
+    "axum",
+    "reqwest",
+    "docx-rs",
+    "tower-http",
+    "uuid",
+    "chrono",
+    "dotenvy",
+    "base64",
+    "sha2",
+    "regex",
+    "zip",
+    "rayon"
+  ]
+}
