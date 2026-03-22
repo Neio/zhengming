@@ -8,9 +8,6 @@ const DOM = {
   logoSmall: document.querySelector('.logo-small-container'),
   cardsContainer: document.getElementById('cards-container'),
   resultsCount: document.getElementById('results-count'),
-  uploadZone: document.getElementById('upload-zone'),
-  fileInput: document.getElementById('file-input'),
-  uploadStatus: document.getElementById('upload-status'),
   statCount: document.getElementById('stat-count'),
   statSize: document.getElementById('stat-size'),
 };
@@ -255,113 +252,6 @@ function generateStyledParagraph(card, i, paragraph) {
   }
 
   return paragraph.replace(/(?:)/g, (_, index) => obj[index] || '');
-}
-
-/** UPLOAD LOGIC */
-DOM.uploadZone.addEventListener('click', () => DOM.fileInput.click());
-DOM.uploadZone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  DOM.uploadZone.classList.add('dragover');
-});
-DOM.uploadZone.addEventListener('dragleave', (e) => {
-  e.preventDefault();
-  DOM.uploadZone.classList.remove('dragover');
-});
-DOM.uploadZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  DOM.uploadZone.classList.remove('dragover');
-  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    handleUpload(e.dataTransfer.files[0]);
-  }
-});
-
-DOM.fileInput.addEventListener('change', (e) => {
-  if (e.target.files && e.target.files.length > 0) {
-    handleUpload(e.target.files[0]);
-  }
-});
-
-async function handleUpload(file) {
-  if (!file.name.endsWith('.docx') && !file.name.endsWith('.zip') && !file.name.endsWith('.csv')) {
-    showUploadStatus('Only .docx, .zip, and .csv files are supported.', false);
-    return;
-  }
-
-  showUploadStatus('Initiating upload...', null);
-  DOM.uploadStatus.className = 'status-msg'; // clear styles
-  
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!res.ok) {
-        const errText = await res.text();
-        showUploadStatus(`Error: ${errText}`, false);
-        return;
-    }
-
-    const data = await res.json();
-    if (data.job_id) {
-        pollJobProgress(data.job_id);
-    } else {
-        showUploadStatus('Error: Returned no Job ID', false);
-    }
-  } catch (e) {
-    showUploadStatus(`Network error: ${e.message}`, false);
-  }
-}
-
-async function pollJobProgress(jobId) {
-    try {
-        const res = await fetch(`/api/progress/${jobId}`);
-        if (!res.ok) {
-            showUploadStatus(`Failed to fetch job progress`, false);
-            return;
-        }
-
-        const job = await res.json();
-
-        if (job.error) {
-            showUploadStatus(`Job Failed: ${job.error}`, false);
-            return;
-        }
-
-        let msg = `${job.status}`;
-        
-        if (job.status.includes('Indexing')) {
-            if (job.cards_indexed > 0) {
-                const perc = Math.round((job.cards_uploaded / job.cards_indexed) * 100);
-                msg += ` (${job.cards_uploaded}/${job.cards_indexed} cards - ${perc}%)`;
-            }
-        } else if (job.total_files > 0) {
-            const perc = Math.round((job.processed_files / job.total_files) * 100);
-            msg += ` (${job.processed_files}/${job.total_files} documents - ${perc}%)`;
-        }
-
-        showUploadStatus(msg, null);
-
-        if (job.status === 'Completed') {
-            showUploadStatus(`Success! Finished indexing ${job.cards_indexed} cards!`, true);
-            updateStats();
-        } else {
-            setTimeout(() => pollJobProgress(jobId), 300);
-        }
-
-    } catch(e) {
-        showUploadStatus(`Error polling progress: ${e.message}`, false);
-    }
-}
-
-function showUploadStatus(msg, isSuccess) {
-  DOM.uploadStatus.className = 'status-msg';
-  if (isSuccess === true) DOM.uploadStatus.classList.add('status-success');
-  if (isSuccess === false) DOM.uploadStatus.classList.add('status-error');
-  DOM.uploadStatus.textContent = msg;
 }
 
 /** STATS LOGIC */
