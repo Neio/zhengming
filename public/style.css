@@ -325,6 +325,19 @@ header h1 {
 .meta-pocket {
   font-style: italic;
 }
+
+.card-filename {
+  color: #888;
+  font-size: 0.8rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  background: #f4f5f7;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid #eaeaea;
+}
+
 .stats-box {
   background: white;
   padding: 1.5rem;

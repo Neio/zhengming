@@ -116,17 +116,26 @@ function createCardElement(card) {
   // Content wrapper for copying
   const contentWrapper = document.createElement('div');
 
-  // Hierarchy Metadata (Hat > Block > Pocket)
-  if (card.hat || card.block || card.pocket) {
+  // Hierarchy Metadata & Original Filename
+  if (card.hat || card.block || card.pocket || card.filename) {
     const meta = document.createElement('p');
     meta.className = 'card-metadata';
     const parts = [];
     if (card.hat) parts.push(`<span class="meta-hat">${card.hat}</span>`);
     if (card.block) parts.push(`<span class="meta-block">${card.block}</span>`);
     if (card.pocket) parts.push(`<span class="meta-pocket">${card.pocket}</span>`);
-    meta.innerHTML = parts.join(' ❯ ');
+    
+    let html = parts.join(' ❯ ');
+    
+    if (card.filename) {
+      if (html) html += ' <span style="margin: 0 10px; color: #ccc;">|</span> ';
+      html += `<span class="card-filename" title="Source Document"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>${card.filename}</span>`;
+    }
+    
+    meta.innerHTML = html;
     contentWrapper.appendChild(meta);
   }
+
 
   // OpenCaselist Metadata (Author, Source, Round, Year, Tournament, School, Team, Judge)
   if (card.author || card.source || card.round || card.year || card.tournament || card.school || card.team || card.judge) {
