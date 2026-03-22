@@ -1,8 +1,8 @@
 use crate::card::Card;
 use csv::ReaderBuilder;
-use std::io::Read;
+use sha2::{Digest, Sha256};
 use std::error::Error;
-use sha2::{Sha256, Digest};
+use std::io::Read;
 
 pub struct OpenCaselistParser<R: Read> {
     reader: csv::Reader<R>,
@@ -19,7 +19,7 @@ impl<R: Read> OpenCaselistParser<R> {
 
     pub fn parse_records(mut self) -> impl Iterator<Item = Result<Card, Box<dyn Error>>> {
         let headers = self.reader.headers().unwrap().clone();
-        
+
         self.reader.into_records().map(move |result| {
             let record = result?;
             let mut card = Card::new_empty();
@@ -29,7 +29,9 @@ impl<R: Read> OpenCaselistParser<R> {
 
             for (i, header) in headers.iter().enumerate() {
                 let val = record.get(i).unwrap_or("").trim().to_string();
-                if val.is_empty() { continue; }
+                if val.is_empty() {
+                    continue;
+                }
 
                 match header.to_lowercase().as_str() {
                     "tag" | "title" => card.tag = val,
@@ -65,7 +67,8 @@ impl<R: Read> OpenCaselistParser<R> {
 
             if card.id.is_empty() {
                 let mut hasher = Sha256::new();
-                hasher.update(format!("{}{}{}", card.tag, card.cite, card.body.join("")).as_bytes());
+                hasher
+                    .update(format!("{}{}{}", card.tag, card.cite, card.body.join("")).as_bytes());
                 card.id = format!("{:x}", hasher.finalize());
             }
 
@@ -89,17 +92,22 @@ mod tests {
         }
         let file = File::open(path).expect("Failed to open test csv");
         let parser = OpenCaselistParser::new(file);
-        
+
         let cards: Vec<_> = parser.parse_records().collect();
         assert!(!cards.is_empty(), "Should parse at least one record");
-        
+
         for c in &cards {
             assert!(c.is_ok(), "Record parsing failed");
         }
-        
+
         // Detailed check on the first card
         let first_card = cards[0].as_ref().unwrap();
-        assert!(!first_card.tag.is_empty() || !first_card.cite.is_empty() || !first_card.body.is_empty(), "Card should have some content extracted");
+        assert!(
+            !first_card.tag.is_empty()
+                || !first_card.cite.is_empty()
+                || !first_card.body.is_empty(),
+            "Card should have some content extracted"
+        );
         assert!(!first_card.id.is_empty(), "Card ID should be generated");
     }
 }

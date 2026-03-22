@@ -46,7 +46,7 @@ async function performSearch(query) {
   try {
     const res = await fetch(`/api/query?q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new Error('Search failed');
-    const data = await fetch(res.url).then(r => r.json());
+    const data = await res.json();
     
     renderResults(data);
   } catch (e) {

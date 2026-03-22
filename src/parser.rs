@@ -1,8 +1,8 @@
 use crate::card::Card;
-use docx_rs::*;
-use sha2::{Sha256, Digest};
 use chrono::NaiveDate;
+use docx_rs::*;
 use regex::Regex;
+use sha2::{Digest, Sha256};
 
 pub struct CardParser {
     filename: String,
@@ -27,14 +27,19 @@ impl CardParser {
             if let DocumentChild::Paragraph(p) = child {
                 let style = p.property.style.clone().map(|s| s.val).unwrap_or_default();
                 let clean_style = style.to_lowercase().replace(" ", "");
-                
+
                 match clean_style.as_str() {
                     "heading1" => current_hat = self.get_text(&p),
                     "heading2" => current_block = self.get_text(&p),
                     "heading3" => current_pocket = self.get_text(&p),
                     "heading4" => {
                         if !current_paragraphs.is_empty() {
-                            if let Ok(mut c) = self.create_cards(&current_paragraphs, &current_hat, &current_block, &current_pocket) {
+                            if let Ok(mut c) = self.create_cards(
+                                &current_paragraphs,
+                                &current_hat,
+                                &current_block,
+                                &current_pocket,
+                            ) {
                                 cards.append(&mut c);
                             }
                         }
@@ -48,7 +53,12 @@ impl CardParser {
         }
 
         if !current_paragraphs.is_empty() {
-             if let Ok(mut c) = self.create_cards(&current_paragraphs, &current_hat, &current_block, &current_pocket) {
+            if let Ok(mut c) = self.create_cards(
+                &current_paragraphs,
+                &current_hat,
+                &current_block,
+                &current_pocket,
+            ) {
                 cards.append(&mut c);
             }
         }
@@ -56,13 +66,22 @@ impl CardParser {
         Ok(cards)
     }
 
-    fn create_cards(&self, paragraphs: &[Paragraph], hat: &str, block: &str, pocket: &str) -> Result<Vec<Card>, String> {
+    fn create_cards(
+        &self,
+        paragraphs: &[Paragraph],
+        hat: &str,
+        block: &str,
+        pocket: &str,
+    ) -> Result<Vec<Card>, String> {
         if paragraphs.is_empty() {
             return Err("No paragraphs".to_string());
         }
 
-        let tag = self.get_text(&paragraphs[0]).trim_matches(|c| c == ',' || c == ' ').to_string();
-        
+        let tag = self
+            .get_text(&paragraphs[0])
+            .trim_matches(|c| c == ',' || c == ' ')
+            .to_string();
+
         // Find citation and metadata
         let mut tag_sub = String::new();
         let mut cite = String::new();
@@ -72,19 +91,23 @@ impl CardParser {
         for (i, p) in paragraphs.iter().enumerate().skip(1) {
             let style = p.property.style.clone().map(|s| s.val).unwrap_or_default();
             let text = self.get_text(p);
-            
+
             // Heading 5 or 6 are explicit Cites in many templates
-            if style == "Heading5" || style == "Heading6" || style == "Heading 5" || style == "Heading 6" {
+            if style == "Heading5"
+                || style == "Heading6"
+                || style == "Heading 5"
+                || style == "Heading 6"
+            {
                 cite = text;
-                body_paragraphs = paragraphs[i+1..].to_vec();
+                body_paragraphs = paragraphs[i + 1..].to_vec();
                 break;
             }
 
-            // Heuristic for "Normal" style cites: 
+            // Heuristic for "Normal" style cites:
             // Often bolded or contains a date (number) and is the first non-empty paragraph after tag
             if i == 1 && !text.is_empty() && text.chars().any(|c| c.is_numeric()) {
                 cite = text;
-                body_paragraphs = paragraphs[i+1..].to_vec();
+                body_paragraphs = paragraphs[i + 1..].to_vec();
                 break;
             }
 
@@ -96,7 +119,11 @@ impl CardParser {
 
         if body_paragraphs.is_empty() {
             // Fallback if no cite found via heuristic
-            body_paragraphs = if paragraphs.len() > 1 { paragraphs[1..].to_vec() } else { Vec::new() };
+            body_paragraphs = if paragraphs.len() > 1 {
+                paragraphs[1..].to_vec()
+            } else {
+                Vec::new()
+            };
         }
 
         let mut highlighted_text = String::new();
@@ -115,28 +142,30 @@ impl CardParser {
             for child in &p.children {
                 if let ParagraphChild::Run(r) = child {
                     let run_text = self.get_run_text(r);
-                    if run_text.trim().is_empty() { continue; }
+                    if run_text.trim().is_empty() {
+                        continue;
+                    }
 
                     if let Some(start) = p_text[j..].find(&run_text) {
                         let start = j + start;
                         let end = start + run_text.len();
 
                         if r.run_property.highlight.is_some() {
-                            highlights.push(vec![p_index as i32, start as i32, end as i32]);
+                            highlights.push(vec![p_index, start as i32, end as i32]);
                             highlighted_text.push(' ');
                             highlighted_text.push_str(&run_text);
                         }
                         if r.run_property.underline.is_some() {
-                             underlines.push(vec![p_index as i32, start as i32, end as i32]);
+                            underlines.push(vec![p_index, start as i32, end as i32]);
                         }
                         if r.run_property.bold.is_some() {
-                             bold.push(vec![p_index as i32, start as i32, end as i32]);
+                            bold.push(vec![p_index, start as i32, end as i32]);
                         }
                         // Emphasis is often a style name in the original project
                         if let Some(style) = &r.run_property.style {
-                             if style.val == "Emphasis" {
-                                 emphasis.push(vec![p_index as i32, start as i32, end as i32]);
-                             }
+                            if style.val == "Emphasis" {
+                                emphasis.push(vec![p_index, start as i32, end as i32]);
+                            }
                         }
 
                         j = end;
@@ -147,7 +176,7 @@ impl CardParser {
         }
 
         let cite_date = self.extract_date(&cite);
-        
+
         let mut hasher = Sha256::new();
         hasher.update(format!("{}{}{}", tag, cite, body.join("")).as_bytes());
         let id = format!("{:x}", hasher.finalize());
@@ -166,7 +195,7 @@ impl CardParser {
             emphasis,
             underlines,
             bold,
-            cite_emphasis: Vec::new(), 
+            cite_emphasis: Vec::new(),
             cite_date: cite_date.map(|d| d.format("%Y-%m-%d").to_string()),
             filename: self.filename.clone(),
             author: String::new(),
@@ -193,10 +222,13 @@ impl CardParser {
             let m: u32 = cap[1].parse().ok()?;
             let d: u32 = cap[2].parse().ok()?;
             let mut y: i32 = cap[3].parse().ok()?;
-            
+
             if y < 100 {
-                if y <= 21 { y += 2000; }
-                else { y += 1900; }
+                if y <= 21 {
+                    y += 2000;
+                } else {
+                    y += 1900;
+                }
             }
             return NaiveDate::from_ymd_opt(y, m, d);
         }
@@ -239,16 +271,22 @@ mod tests {
         }
         let content = fs::read(path).expect("Failed to read test docx");
         let parser = CardParser::new("1nc.docx".to_string(), content);
-        
+
         let res = parser.parse();
         assert!(res.is_ok(), "Docx parsing failed");
-        
+
         let cards = res.unwrap();
-        assert!(!cards.is_empty(), "Should extract at least one card from docx");
-        
+        assert!(
+            !cards.is_empty(),
+            "Should extract at least one card from docx"
+        );
+
         let first_card = &cards[0];
         assert!(!first_card.tag.is_empty(), "Card should have a tag");
-        assert!(!first_card.id.is_empty(), "Card should have an ID generated");
+        assert!(
+            !first_card.id.is_empty(),
+            "Card should have an ID generated"
+        );
         assert!(!first_card.body.is_empty(), "Card should have body text");
     }
 }

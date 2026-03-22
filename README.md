@@ -55,6 +55,21 @@ cargo test
 ```
 The test suite utilizes the `tempfile` crate to create isolated storage directories for `TantivyIndex` during test execution. This ensures that your actual runtime `debate_index` or `TANTIVY_PATH` environment is never affected or modified by automated tests.
 
+### Local CI/CD
+
+A comprehensive CI/CD script is provided to ensure code quality and build stability:
+```bash
+bash scripts/ci.sh
+```
+This script performs:
+1. **Format Check**: `cargo fmt`
+2. **Linting**: `cargo clippy` (treating warnings as errors)
+3. **Tests**: `cargo test`
+4. **Build**: `cargo build --release`
+5. **Docker**: `docker build -t zhengming:local .`
+
+You can also run the full pipeline using the Antigravity workflow: `/cicd`.
+
 ## API Documentation
 
 - `POST /api/upload`: Upload a `.docx`, `.zip`, or `.csv` file.

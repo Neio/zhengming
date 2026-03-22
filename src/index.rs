@@ -1,13 +1,13 @@
 use crate::card::Card;
+use std::error::Error;
+use std::fs;
+use std::path::Path;
+use tantivy::aggregation::agg_req::Aggregations;
+use tantivy::aggregation::AggregationCollector;
 use tantivy::collector::TopDocs;
-use tantivy::query::{QueryParser, AllQuery};
+use tantivy::query::{AllQuery, QueryParser};
 use tantivy::schema::*;
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
-use tantivy::aggregation::AggregationCollector;
-use tantivy::aggregation::agg_req::Aggregations;
-use std::path::Path;
-use std::fs;
-use std::error::Error;
 
 pub struct TantivyIndex {
     index: Index,
@@ -24,32 +24,32 @@ impl TantivyIndex {
         }
 
         let mut schema_builder = Schema::builder();
-        
+
         schema_builder.add_text_field("id", STRING | STORED);
-        schema_builder.add_text_field("tag", TEXT | STORED);
-        schema_builder.add_text_field("tag_sub", TEXT | STORED);
-        schema_builder.add_text_field("pocket", TEXT | STORED);
-        schema_builder.add_text_field("block", TEXT | STORED);
-        schema_builder.add_text_field("hat", TEXT | STORED);
-        schema_builder.add_text_field("cite", TEXT | STORED);
-        schema_builder.add_text_field("highlighted_text", TEXT | STORED);
-        schema_builder.add_text_field("body", TEXT | STORED);
-        schema_builder.add_text_field("filename", TEXT | STORED);
-        schema_builder.add_text_field("author", TEXT | STORED);
-        schema_builder.add_text_field("source", TEXT | STORED);
-        schema_builder.add_text_field("round", STRING | STORED | FAST);
-        schema_builder.add_text_field("year", STRING | STORED | FAST);
-        schema_builder.add_text_field("cite_date", TEXT | STORED);
+        schema_builder.add_text_field("tag", TEXT);
+        schema_builder.add_text_field("tag_sub", TEXT);
+        schema_builder.add_text_field("pocket", TEXT);
+        schema_builder.add_text_field("block", TEXT);
+        schema_builder.add_text_field("hat", TEXT);
+        schema_builder.add_text_field("cite", TEXT);
+        schema_builder.add_text_field("highlighted_text", TEXT);
+        schema_builder.add_text_field("body", TEXT);
+        schema_builder.add_text_field("filename", TEXT);
+        schema_builder.add_text_field("author", TEXT);
+        schema_builder.add_text_field("source", TEXT);
+        schema_builder.add_text_field("round", STRING | FAST);
+        schema_builder.add_text_field("year", STRING | FAST);
+        schema_builder.add_text_field("cite_date", TEXT);
         // Deduplicated Dataset Metadata
-        schema_builder.add_text_field("fullcite", TEXT | STORED);
-        schema_builder.add_text_field("summary", TEXT | STORED);
-        schema_builder.add_text_field("tournament", STRING | STORED | FAST);
-        schema_builder.add_text_field("opponent", STRING | STORED | FAST);
-        schema_builder.add_text_field("judge", STRING | STORED | FAST);
-        schema_builder.add_text_field("team", STRING | STORED | FAST);
-        schema_builder.add_text_field("school", STRING | STORED | FAST);
-        schema_builder.add_text_field("event", STRING | STORED | FAST);
-        schema_builder.add_text_field("level", STRING | STORED | FAST);
+        schema_builder.add_text_field("fullcite", TEXT);
+        schema_builder.add_text_field("summary", TEXT);
+        schema_builder.add_text_field("tournament", STRING | FAST);
+        schema_builder.add_text_field("opponent", STRING | FAST);
+        schema_builder.add_text_field("judge", STRING | FAST);
+        schema_builder.add_text_field("team", STRING | FAST);
+        schema_builder.add_text_field("school", STRING | FAST);
+        schema_builder.add_text_field("event", STRING | FAST);
+        schema_builder.add_text_field("level", STRING | FAST);
         schema_builder.add_text_field("full_json", STORED);
 
         let schema = schema_builder.build();
@@ -65,7 +65,12 @@ impl TantivyIndex {
             .reload_policy(ReloadPolicy::OnCommitWithDelay)
             .try_into()?;
 
-        Ok(Self { index, reader, schema, index_path: index_path.to_string() })
+        Ok(Self {
+            index,
+            reader,
+            schema,
+            index_path: index_path.to_string(),
+        })
     }
 
     pub fn add_cards(&self, cards: &[Card]) -> Result<(), Box<dyn Error>> {
@@ -79,14 +84,22 @@ impl TantivyIndex {
         Ok(self.index.writer(heap_size)?)
     }
 
-    pub fn add_cards_to_writer(&self, index_writer: &mut IndexWriter, cards: &[Card]) -> Result<(), Box<dyn Error>> {
+    pub fn add_cards_to_writer(
+        &self,
+        index_writer: &mut IndexWriter,
+        cards: &[Card],
+    ) -> Result<(), Box<dyn Error>> {
         self.add_cards_internal(index_writer, cards)
     }
 
-    fn add_cards_internal(&self, index_writer: &mut IndexWriter, cards: &[Card]) -> Result<(), Box<dyn Error>> {
+    fn add_cards_internal(
+        &self,
+        index_writer: &mut IndexWriter,
+        cards: &[Card],
+    ) -> Result<(), Box<dyn Error>> {
         for card in cards {
             let mut doc = TantivyDocument::default();
-            
+
             let id_field = self.schema.get_field("id")?;
             let tag_field = self.schema.get_field("tag")?;
             let tag_sub_field = self.schema.get_field("tag_sub")?;
@@ -112,7 +125,7 @@ impl TantivyIndex {
             let event_field = self.schema.get_field("event")?;
             let level_field = self.schema.get_field("level")?;
             let full_json_field = self.schema.get_field("full_json")?;
-  
+
             doc.add_text(id_field, &card.id);
             doc.add_text(tag_field, &card.tag);
             doc.add_text(tag_sub_field, &card.tag_sub);
@@ -121,7 +134,7 @@ impl TantivyIndex {
             doc.add_text(hat_field, &card.hat);
             doc.add_text(cite_field, &card.cite);
             doc.add_text(highlighted_text_field, &card.highlighted_text);
-            doc.add_text(body_field, &card.body.join("\n"));
+            doc.add_text(body_field, card.body.join("\n"));
             doc.add_text(filename_field, &card.filename);
             doc.add_text(author_field, &card.author);
             doc.add_text(source_field, &card.source);
@@ -139,14 +152,14 @@ impl TantivyIndex {
             doc.add_text(school_field, &card.school);
             doc.add_text(event_field, &card.event);
             doc.add_text(level_field, &card.level);
-            
+
             let json = serde_json::to_string(card)?;
             doc.add_text(full_json_field, &json);
 
             // Deduplication: Delete any existing document with this ID
             let id_term = tantivy::Term::from_field_text(id_field, &card.id);
             index_writer.delete_term(id_term);
-            
+
             index_writer.add_document(doc)?;
         }
         Ok(())
@@ -154,17 +167,24 @@ impl TantivyIndex {
 
     pub fn search(&self, q: &str, limit: usize) -> Result<Vec<serde_json::Value>, Box<dyn Error>> {
         let searcher = self.reader.searcher();
-        
+
         let tag_field = self.schema.get_field("tag")?;
         let highlighted_text_field = self.schema.get_field("highlighted_text")?;
         let cite_field = self.schema.get_field("cite")?;
         let body_field = self.schema.get_field("body")?;
         let author_field = self.schema.get_field("author")?;
 
-        let query_parser = QueryParser::for_index(&self.index, vec![
-            tag_field, highlighted_text_field, cite_field, body_field, author_field
-        ]);
-        
+        let query_parser = QueryParser::for_index(
+            &self.index,
+            vec![
+                tag_field,
+                highlighted_text_field,
+                cite_field,
+                body_field,
+                author_field,
+            ],
+        );
+
         let query = query_parser.parse_query(q)?;
         let top_docs = searcher.search(&query, &TopDocs::with_limit(limit))?;
 
@@ -188,7 +208,7 @@ impl TantivyIndex {
         let id_field = self.schema.get_field("id")?;
         let query_parser = QueryParser::for_index(&self.index, vec![id_field]);
         let query = query_parser.parse_query(&format!("id:\"{}\"", id))?;
-        
+
         let top_docs = searcher.search(&query, &TopDocs::with_limit(1))?;
         if let Some((_score, doc_address)) = top_docs.first() {
             let retrieved_doc: TantivyDocument = searcher.doc(*doc_address)?;
@@ -206,7 +226,7 @@ impl TantivyIndex {
     pub fn get_stats(&self) -> Result<serde_json::Value, Box<dyn Error>> {
         let searcher = self.reader.searcher();
         let num_docs = searcher.num_docs();
-        
+
         let mut total_size = 0;
         if let Ok(entries) = std::fs::read_dir(&self.index_path) {
             for entry in entries.flatten() {
@@ -237,7 +257,10 @@ impl TantivyIndex {
             }
         }))?;
 
-        let collector = AggregationCollector::from_aggs(agg_req, tantivy::aggregation::AggregationLimits::default());
+        let collector = AggregationCollector::from_aggs(
+            agg_req,
+            tantivy::aggregation::AggregationLimits::default(),
+        );
         let agg_res = searcher.search(&AllQuery, &collector)?;
 
         Ok(serde_json::json!({
@@ -247,6 +270,7 @@ impl TantivyIndex {
         }))
     }
 
+    #[allow(dead_code)]
     pub fn reload(&self) -> Result<(), Box<dyn Error>> {
         self.reader.reload()?;
         Ok(())
@@ -266,7 +290,7 @@ mod tests {
     fn test_index_creation() {
         let temp_dir = get_test_dir();
         let index_path = temp_dir.path().to_str().unwrap();
-        
+
         let index = TantivyIndex::new(index_path);
         assert!(index.is_ok());
     }
@@ -314,11 +338,18 @@ mod tests {
 
         let results = index.search("test body", 10).expect("Search failed");
         assert_eq!(results.len(), 1);
-        
-        let id_val = results[0].get("id").expect("Missing id field").as_str().unwrap();
+
+        let id_val = results[0]
+            .get("id")
+            .expect("Missing id field")
+            .as_str()
+            .unwrap();
         assert_eq!(id_val, "test1");
 
-        let retrieved = index.get_card("test1").expect("Get card failed").expect("Card not found");
+        let retrieved = index
+            .get_card("test1")
+            .expect("Get card failed")
+            .expect("Card not found");
         assert_eq!(retrieved.get("tag").unwrap().as_str().unwrap(), "Test Tag");
     }
 }
