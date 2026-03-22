@@ -1,73 +1,65 @@
-# Zhengming (Verbatim Parser RS)
+# ZhengMing (争鸣): A Debate Search Engine
 
-A high-performance Rust service for parsing and indexing debate "cards" from Microsoft Word (`.docx`) files into Zinc Search.
+A high-performance Rust service for parsing, indexing, and searching massive debate datasets. Originally built to extract "cards" from Microsoft Word (`.docx`) Verbatim files, it now supports native, high-speed CSV parsing for massive datasets like the `OpenCaseList-Deduplicated`.
 
 ## Overview
 
-"Verbatim" is a standard Microsoft Word template used by competitive policy debaters to format evidence. This project extracts structured "cards" from these documents, preserving formatting like highlights, underlines, and meta-data (Hats, Blocks, Pockets, Tags, Cites).
+ZhengMing (meaning "contention of a hundred schools of thought") extracts structured "cards" from debate documents and datasets. 
 
-The parsed data is indexed into [Zinc Search](https://zincsearch-docs.netlify.app/), a lightweight alternative to Elasticsearch, making thousands of cards searchable in milliseconds.
+It is completely self-contained, powered by [Tantivy](https://github.com/quickwit-oss/tantivy) (a fast, Rust-native search library inspired by Apache Lucene). This eliminates the need for external full-text search services and Docker containers, making setup incredibly simple and search blazing fast.
 
 ## Features
 
-- **Blazing Fast Parsing**: Built in Rust using `docx-rs` and `rayon` for multi-threaded document processing.
-- **Bulk Upload**: Support for uploading individual `.docx` files or `.zip` archives containing many documents.
-- **Rich Metadata Extraction**: Extracts and indices:
-    - **Hierarchy**: Hat, Block, Pocket.
-    - **Card Data**: Tag, Cite (with date extraction), Body text.
-    - **Formatting**: Highlights, Underlines, and Emphasis (preserved as character offsets).
-- **REST API**: Simple endpoints for uploading, querying, and monitoring job progress.
-- **Search Interface**: A minimalist, high-performance web frontend for uploading and searching cards.
+- **Embedded Search**: Zero external dependencies. Uses Tantivy to provide sub-millisecond search latency.
+- **Massive Scale**: Optimized to securely upload and ingest 10GB+ datasets without memory crashes using streaming chunk reads and background batch processing.
+- **Richer Metadata Extraction**: Parses exhaustive metadata including `Tournament`, `Round`, `Judge`, `School`, `Team`, `Event`, and `Level`, deduplicating evidence on ingestion to keep the index clean.
+- **Formatting Preservation**: Preserves original visual aesthetics to recreate the "Debate Card" feel.
+    - Extracts `Bold`, `Underline`, and `Highlight` styles directly from `.docx` files.
+    - Honors embedded HTML tags (`<strong>`, `<mark>`, `<u>`) from `CSV markup`.
+- **Database Insights**: A dedicated standalone dashboard at `/stats.html` offering real-time analytics on index size, pending ingestion tasks, and deep aggregations (by Tournament, School, Event, Year).
+- **REST API**: Simple, robust endpoints for uploading, querying, and checking stats.
 
 ## Tech Stack
 
-- **Backend**: Rust, Axum, Tokio, Rayon.
-- **Search Engine**: Zinc Search.
-- **Frontend**: Vanilla HTML/JS/CSS.
+- **Backend / Search**: Rust, Axum, Tokio, Rayon, Tantivy.
+- **Parsers**: `docx-rs` for Verbatim processing, `csv` for massive datasets.
+- **Frontend**: Vanilla HTML/JS/CSS for optimal performance.
 
 ## Getting Started
 
 ### Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- [Zinc Search](https://zincsearch-docs.netlify.app/quickstart/) (running on port 4080 by default)
 
 ### Configuration
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory (optional). Default settings will use a `debate_index` folder in the project root:
 
 ```env
-ZINC_URL=http://localhost:4080
-ZINC_USER=admin
-ZINC_PASS=admin
-INDEX_NAME=debate-cards
+TANTIVY_PATH=debate_index
 ```
 
 ### Running the Server
 
-1. Start Zinc Search (e.g., via Docker):
-   ```bash
-   docker-compose up -d
-   ```
-2. Run the Rust backend:
+1. Run the Rust backend (this automatically builds the search index folder):
    ```bash
    cargo run --release
    ```
-3. Open `http://localhost:3000` in your browser.
+2. Open `http://localhost:3000` in your browser.
 
 ## API Documentation
 
-- `POST /api/upload`: Upload a `.docx` or `.zip` file. Returns a `job_id`.
-- `GET /api/progress/:job_id`: Check the status of an upload job.
-- `GET /api/query?q=search+term`: Search for cards.
-- `GET /api/card/:id`: Retrieve a specific card by its ID.
+- `POST /api/upload`: Upload a `.docx`, `.zip`, or `.csv` file.
+- `GET /api/progress/:job_id`: Check the status of background upload/indexing jobs.
+- `GET /api/query?q=search+term`: Full-text search across cards and metadata.
+- `GET /api/stats`: Retrieve index aggregations, total cards, and pending ingestion count.
 
 ## Directory Structure
 
-- `src/`: Rust source code.
-    - `main.rs`: Axum server and route handlers.
-    - `parser.rs`: Core logic for parsing Word documents.
-    - `zinc.rs`: Client for interacting with Zinc Search.
-    - `card.rs`: Data models for cards.
-- `public/`: Frontend assets (HTML, CSS, JS).
-- `docker-compose.yml`: Minimal setup for Zinc Search.
+- `src/`: Rust backend
+    - `main.rs`: Axum server API and background job state.
+    - `index.rs`: Tantivy embedded schema and search query logic.
+    - `parser.rs`: Microsoft Word (`.docx`) extraction.
+    - `csv_parser.rs`: Massive dataset CSV extraction.
+    - `card.rs`: Core database struct representation.
+- `public/`: High-performance Vanilla frontend assets.
