@@ -159,10 +159,12 @@ function createCardElement(card) {
     contentWrapper.appendChild(sub);
   }
 
-  const cite = document.createElement('p');
-  cite.className = 'card-cite';
-  cite.innerHTML = generateStyledCite(card.cite, card.cite_emphasis);
-  contentWrapper.appendChild(cite);
+  if (card.cite) {
+    const cite = document.createElement('p');
+    cite.className = 'card-cite';
+    cite.innerHTML = `<strong>Cite:</strong> ${generateStyledCite(card.cite, card.cite_emphasis)}`;
+    contentWrapper.appendChild(cite);
+  }
 
   const bodyDiv = document.createElement('div');
   bodyDiv.className = 'card-body hidden';

@@ -387,11 +387,33 @@ header h1 {
   color: #444;
 }
 
+.card-summary, .card-cite {
+  background: rgba(16, 185, 129, 0.05); 
+  border-left: 3px solid var(--accent-emerald);
+  padding: 10px 14px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+
+.card-summary {
+  font-size: 0.95rem;
+  color: #444;
+}
+
+.card-summary strong {
+  color: var(--accent-emerald);
+}
+
 .card-cite {
   font-size: 11pt;
-  margin: 0 0 12px 0;
-  line-height: 1.2;
+  line-height: 1.4;
   color: #222;
+  border-left-color: var(--accent-gold);
+  background: rgba(217, 119, 6, 0.05);
+}
+
+.card-cite strong {
+  color: var(--accent-gold);
 }
 
 .card-body {
