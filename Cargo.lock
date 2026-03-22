@@ -3262,6 +3262,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tantivy",
+ "tempfile",
  "tokio",
  "tokio-util",
  "tower-http",

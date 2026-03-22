@@ -246,4 +246,79 @@ impl TantivyIndex {
             "insights": agg_res
         }))
     }
+
+    pub fn reload(&self) -> Result<(), Box<dyn Error>> {
+        self.reader.reload()?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn get_test_dir() -> TempDir {
+        TempDir::new().expect("Failed to create temp dir")
+    }
+
+    #[test]
+    fn test_index_creation() {
+        let temp_dir = get_test_dir();
+        let index_path = temp_dir.path().to_str().unwrap();
+        
+        let index = TantivyIndex::new(index_path);
+        assert!(index.is_ok());
+    }
+
+    #[test]
+    fn test_add_and_search_card() {
+        let temp_dir = get_test_dir();
+        let index_path = temp_dir.path().to_str().unwrap();
+        let index = TantivyIndex::new(index_path).unwrap();
+
+        let card = Card {
+            id: "test1".to_string(),
+            tag: "Test Tag".to_string(),
+            tag_sub: "Sub".to_string(),
+            pocket: "Pocket".to_string(),
+            block: "Block".to_string(),
+            hat: "Hat".to_string(),
+            cite: "Cite 2024".to_string(),
+            highlighted_text: "High".to_string(),
+            body: vec!["This is a test body.".to_string()],
+            highlights: vec![],
+            emphasis: vec![],
+            underlines: vec![],
+            bold: vec![],
+            cite_emphasis: vec![],
+            cite_date: Some("2024-01-01".to_string()),
+            filename: "test.docx".to_string(),
+            author: "Author".to_string(),
+            source: "Source".to_string(),
+            round: "1".to_string(),
+            year: "2024".to_string(),
+            fullcite: "Full cite text".to_string(),
+            summary: "Summary text".to_string(),
+            tournament: "Tournament X".to_string(),
+            opponent: "Opponent Y".to_string(),
+            judge: "Judge Z".to_string(),
+            team: "Team A".to_string(),
+            school: "School B".to_string(),
+            event: "Policy".to_string(),
+            level: "Varsity".to_string(),
+        };
+
+        index.add_cards(&[card]).expect("Failed to add card");
+        index.reload().expect("Failed to reload index");
+
+        let results = index.search("test body", 10).expect("Search failed");
+        assert_eq!(results.len(), 1);
+        
+        let id_val = results[0].get("id").expect("Missing id field").as_str().unwrap();
+        assert_eq!(id_val, "test1");
+
+        let retrieved = index.get_card("test1").expect("Get card failed").expect("Card not found");
+        assert_eq!(retrieved.get("tag").unwrap().as_str().unwrap(), "Test Tag");
+    }
 }

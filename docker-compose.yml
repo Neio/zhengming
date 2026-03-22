@@ -1,0 +1,15 @@
+
+services:
+  zhengming:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - zhengming_data:/data
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+      - TANTIVY_PATH=/data/debate_index
+
+volumes:
+  zhengming_data:

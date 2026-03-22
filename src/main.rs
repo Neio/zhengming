@@ -357,3 +357,41 @@ async fn get_stats(
 
     (StatusCode::OK, Json(stats)).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    fn test_zip_extraction() {
+        let path = Path::new("test-docs/test.zip");
+        if !path.exists() {
+            println!("test-docs/test.zip not found, skipping zip test");
+            return;
+        }
+
+        let content = fs::read(path).expect("Failed to read test zip");
+        let cursor = std::io::Cursor::new(content);
+        let mut archive = zip::ZipArchive::new(cursor).expect("Failed to initialize zip archive");
+        
+        let mut docx_count = 0;
+        for i in 0..archive.len() {
+            if let Ok(mut file) = archive.by_index(i) {
+                let entry_name = file.name().to_string();
+                if entry_name.ends_with(".docx") && !entry_name.contains("__MACOSX") {
+                    docx_count += 1;
+                    
+                    let mut buf = Vec::new();
+                    std::io::Read::read_to_end(&mut file, &mut buf).expect("Failed to read inside zip");
+                    
+                    let parser = CardParser::new(entry_name, buf);
+                    let res = parser.parse();
+                    assert!(res.is_ok(), "Should parse docx inside zip");
+                }
+            }
+        }
+        assert!(docx_count > 0, "Zip file should contain at least one valid docx file");
+    }
+}

@@ -47,6 +47,14 @@ TANTIVY_PATH=debate_index
    ```
 2. Open `http://localhost:3000` in your browser.
 
+### Running Tests
+
+To run the unit and integration tests:
+```bash
+cargo test
+```
+The test suite utilizes the `tempfile` crate to create isolated storage directories for `TantivyIndex` during test execution. This ensures that your actual runtime `debate_index` or `TANTIVY_PATH` environment is never affected or modified by automated tests.
+
 ## API Documentation
 
 - `POST /api/upload`: Upload a `.docx`, `.zip`, or `.csv` file.

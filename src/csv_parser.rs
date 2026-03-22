@@ -73,3 +73,33 @@ impl<R: Read> OpenCaselistParser<R> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::path::Path;
+
+    #[test]
+    fn test_parse_csv() {
+        let path = Path::new("test-docs/test_dedup.csv");
+        if !path.exists() {
+            println!("test-docs/test_dedup.csv not found, skipping specific file test");
+            return;
+        }
+        let file = File::open(path).expect("Failed to open test csv");
+        let parser = OpenCaselistParser::new(file);
+        
+        let cards: Vec<_> = parser.parse_records().collect();
+        assert!(!cards.is_empty(), "Should parse at least one record");
+        
+        for c in &cards {
+            assert!(c.is_ok(), "Record parsing failed");
+        }
+        
+        // Detailed check on the first card
+        let first_card = cards[0].as_ref().unwrap();
+        assert!(!first_card.tag.is_empty() || !first_card.cite.is_empty() || !first_card.body.is_empty(), "Card should have some content extracted");
+        assert!(!first_card.id.is_empty(), "Card ID should be generated");
+    }
+}

@@ -1,0 +1,7 @@
+target/
+**/*.rs.bk
+.git/
+.env
+debate_index/
+.DS_Store
+test-docs/

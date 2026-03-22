@@ -223,3 +223,32 @@ impl CardParser {
         text
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    fn test_parse_docx() {
+        let path = Path::new("test-docs/1nc.docx");
+        if !path.exists() {
+            println!("test-docs/1nc.docx not found, skipping docx test");
+            return;
+        }
+        let content = fs::read(path).expect("Failed to read test docx");
+        let parser = CardParser::new("1nc.docx".to_string(), content);
+        
+        let res = parser.parse();
+        assert!(res.is_ok(), "Docx parsing failed");
+        
+        let cards = res.unwrap();
+        assert!(!cards.is_empty(), "Should extract at least one card from docx");
+        
+        let first_card = &cards[0];
+        assert!(!first_card.tag.is_empty(), "Card should have a tag");
+        assert!(!first_card.id.is_empty(), "Card should have an ID generated");
+        assert!(!first_card.body.is_empty(), "Card should have body text");
+    }
+}
