@@ -196,16 +196,30 @@ function createCardElement(card) {
   });
 
   copyBtn.addEventListener('click', () => {
+    const cleanHTML = generateVerbatimHTML(card);
+    
+    const tempDiv = document.createElement('div');
+    tempDiv.style.position = 'absolute';
+    tempDiv.style.left = '-9999px';
+    tempDiv.innerHTML = cleanHTML;
+    document.body.appendChild(tempDiv);
+    
     const range = document.createRange();
-    range.selectNode(contentWrapper);
+    range.selectNode(tempDiv);
     window.getSelection().removeAllRanges();
     window.getSelection().addRange(range);
-    document.execCommand('copy');
-    window.getSelection().removeAllRanges();
     
-    const orig = copyBtn.innerHTML;
-    copyBtn.innerHTML = '✅ Copied!';
-    setTimeout(() => copyBtn.innerHTML = orig, 1500);
+    try {
+      document.execCommand('copy');
+      const orig = copyBtn.innerHTML;
+      copyBtn.innerHTML = '✅ Copied!';
+      setTimeout(() => copyBtn.innerHTML = orig, 1500);
+    } catch (err) {
+      console.error('Failed to copy card: ', err);
+    }
+    
+    window.getSelection().removeAllRanges();
+    document.body.removeChild(tempDiv);
   });
 
   return el;
@@ -252,6 +266,22 @@ function generateStyledParagraph(card, i, paragraph) {
   }
 
   return paragraph.replace(/(?:)/g, (_, index) => obj[index] || '');
+}
+
+/** RECONSTRUCTION LOGIC (VERBATIM CLEAN HTML) */
+function generateVerbatimHTML(card) {
+  let html = '';
+  
+  // Card-only format: exclude top hierarchy (Hat, Block, Pocket)
+  if (card.tag) html += `<h4>${card.tag}</h4>`;
+  if (card.tag_sub) html += `<p>${card.tag_sub}</p>`;
+  if (card.cite) html += `<h5>${generateStyledCite(card.cite, card.cite_emphasis)}</h5>`;
+  
+  card.body.forEach((paragraph, i) => {
+    html += `<p>${generateStyledParagraph(card, i, paragraph)}</p>`;
+  });
+  
+  return html;
 }
 
 /** STATS LOGIC */
