@@ -10,6 +10,8 @@ const DOM = {
   resultsCount: document.getElementById('results-count'),
   statCount: document.getElementById('stat-count'),
   statSize: document.getElementById('stat-size'),
+  searchBodyCheck: document.getElementById('search-body-check'),
+  headerSearchBodyCheck: document.getElementById('header-search-body-check'),
 };
 
 const HIGHLIGHT_COLOR = '#ffff00'; // Standard yellow highlight
@@ -27,8 +29,17 @@ function showResults() {
   DOM.homeView.classList.add('hidden');
   DOM.searchView.classList.remove('hidden');
   DOM.headerSearchInput.value = DOM.searchInput.value;
+  DOM.headerSearchBodyCheck.checked = DOM.searchBodyCheck.checked;
   DOM.headerSearchInput.focus();
 }
+
+// Synchronize checkboxes
+DOM.searchBodyCheck.addEventListener('change', () => {
+    DOM.headerSearchBodyCheck.checked = DOM.searchBodyCheck.checked;
+});
+DOM.headerSearchBodyCheck.addEventListener('change', () => {
+    DOM.searchBodyCheck.checked = DOM.headerSearchBodyCheck.checked;
+});
 
 DOM.logoSmall.addEventListener('click', showHome);
 
@@ -44,7 +55,8 @@ async function performSearch(query) {
   DOM.resultsCount.textContent = '';
 
   try {
-    const res = await fetch(`/api/query?q=${encodeURIComponent(query)}`);
+    const isBodyChecked = DOM.searchBodyCheck.checked;
+    const res = await fetch(`/api/query?q=${encodeURIComponent(query)}&body=${isBodyChecked}`);
     if (!res.ok) throw new Error('Search failed');
     const data = await res.json();
     

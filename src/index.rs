@@ -165,25 +165,32 @@ impl TantivyIndex {
         Ok(())
     }
 
-    pub fn search(&self, q: &str, limit: usize) -> Result<Vec<serde_json::Value>, Box<dyn Error>> {
+    pub fn search(
+        &self,
+        q: &str,
+        limit: usize,
+        search_body: bool,
+    ) -> Result<Vec<serde_json::Value>, Box<dyn Error>> {
         let searcher = self.reader.searcher();
 
         let tag_field = self.schema.get_field("tag")?;
         let highlighted_text_field = self.schema.get_field("highlighted_text")?;
         let cite_field = self.schema.get_field("cite")?;
-        let body_field = self.schema.get_field("body")?;
         let author_field = self.schema.get_field("author")?;
 
-        let query_parser = QueryParser::for_index(
-            &self.index,
-            vec![
-                tag_field,
-                highlighted_text_field,
-                cite_field,
-                body_field,
-                author_field,
-            ],
-        );
+        let mut search_fields = vec![
+            tag_field,
+            highlighted_text_field,
+            cite_field,
+            author_field,
+        ];
+
+        if search_body {
+            let body_field = self.schema.get_field("body")?;
+            search_fields.push(body_field);
+        }
+
+        let query_parser = QueryParser::for_index(&self.index, search_fields);
 
         let query = query_parser.parse_query(q)?;
         let top_docs = searcher.search(&query, &TopDocs::with_limit(limit))?;
@@ -202,6 +209,7 @@ impl TantivyIndex {
 
         Ok(results)
     }
+
 
     pub fn get_card(&self, id: &str) -> Result<Option<serde_json::Value>, Box<dyn Error>> {
         let searcher = self.reader.searcher();
@@ -336,7 +344,16 @@ mod tests {
         index.add_cards(&[card]).expect("Failed to add card");
         index.reload().expect("Failed to reload index");
 
-        let results = index.search("test body", 10).expect("Search failed");
+        // Search with body enabled (should find result)
+        let results = index.search("body", 10, true).expect("Search failed");
+        assert_eq!(results.len(), 1);
+
+        // Search with body disabled (should NOT find result)
+        let results = index.search("body", 10, false).expect("Search failed");
+        assert_eq!(results.len(), 0);
+
+        // Search in other fields (should still find result)
+        let results = index.search("Test Tag", 10, false).expect("Search failed");
         assert_eq!(results.len(), 1);
 
         let id_val = results[0]
@@ -353,3 +370,4 @@ mod tests {
         assert_eq!(retrieved.get("tag").unwrap().as_str().unwrap(), "Test Tag");
     }
 }
+

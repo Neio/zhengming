@@ -363,6 +363,8 @@ struct QueryParams {
     q: String,
     #[serde(default = "default_size")]
     size: usize,
+    #[serde(default)]
+    body: bool,
 }
 
 fn default_size() -> usize {
@@ -370,7 +372,7 @@ fn default_size() -> usize {
 }
 
 async fn query(State(state): State<AppState>, Query(params): Query<QueryParams>) -> Response {
-    match state.index.search(&params.q, params.size) {
+    match state.index.search(&params.q, params.size, params.body) {
         Ok(results) => (StatusCode::OK, Json(results)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -379,6 +381,7 @@ async fn query(State(state): State<AppState>, Query(params): Query<QueryParams>)
             .into_response(),
     }
 }
+
 
 async fn get_card(State(state): State<AppState>, Path(id): Path<String>) -> Response {
     match state.index.get_card(&id) {
