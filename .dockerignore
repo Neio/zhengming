@@ -1,4 +1,6 @@
-target/
+target/**
+!target/x86_64-unknown-linux-gnu/release/zhengming
+!target/release/zhengming
 **/*.rs.bk
 .git/
 .env

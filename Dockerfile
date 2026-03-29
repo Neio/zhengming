@@ -1,15 +1,22 @@
-# Builder stage
-FROM rust:1.94-bookworm AS builder
+# Stage 1: Selector Stage
+# This stage runs on the build host architecture (BUILDPLATFORM) 
+# to select the correct pre-compiled binary.
+FROM --platform=$BUILDPLATFORM busybox AS selector
+ARG TARGETARCH=amd64
 
-WORKDIR /usr/src/app
+# Copy both binaries into the selector stage. 
+# paths as provided: target/x86_64... for amd64, target/release... for arm64
+COPY target/x86_64-unknown-linux-gnu/release/zhengming /zhengming-amd64
+COPY target/release/zhengming /zhengming-arm64
 
-# Copy the source code
-COPY . .
+# Move the correct binary to a common path based on the target architecture
+RUN if [ "${TARGETARCH}" = "amd64" ]; then \
+    mv /zhengming-amd64 /zhengming; \
+    else \
+    mv /zhengming-arm64 /zhengming; \
+    fi
 
-# Build the application
-RUN cargo build --release
-
-# Run stage
+# Stage 2: Final Run Stage
 FROM debian:bookworm-slim
 
 # Install CA certificates for HTTPS requests if needed by reqwest
@@ -17,14 +24,15 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 
 WORKDIR /app
 
-# Copy the compiled binary from the builder environment
-COPY --from=builder /usr/src/app/target/release/zhengming .
+# Copy the selected binary from the selector stage
+COPY --from=selector /zhengming /app/zhengming
+RUN chmod +x /app/zhengming
 
 # Copy the public directory for static assets
-COPY --from=builder /usr/src/app/public ./public
+COPY public ./public
 
 # Copy the private directory for authenticated admin assets
-COPY --from=builder /usr/src/app/private ./private
+COPY private ./private
 
 # Create directory for tantivy index
 RUN mkdir -p /data
