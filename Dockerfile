@@ -23,6 +23,9 @@ COPY --from=builder /usr/src/app/target/release/zhengming .
 # Copy the public directory for static assets
 COPY --from=builder /usr/src/app/public ./public
 
+# Copy the private directory for authenticated admin assets
+COPY --from=builder /usr/src/app/private ./private
+
 # Create directory for tantivy index
 RUN mkdir -p /data
 
