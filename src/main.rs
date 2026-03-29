@@ -8,12 +8,14 @@ use crate::csv_parser::OpenCaselistParser;
 use crate::index::TantivyIndex;
 use crate::parser::CardParser;
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
+    http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
 };
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use rayon::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
@@ -21,6 +23,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -38,6 +41,9 @@ struct JobProgress {
 struct AppState {
     index: Arc<TantivyIndex>,
     jobs: Arc<RwLock<HashMap<String, Arc<RwLock<JobProgress>>>>>,
+    admin_password: Option<String>,
+    sessions: Arc<RwLock<HashMap<String, Instant>>>,
+    used_nonces: Arc<RwLock<HashMap<String, Instant>>>,
 }
 
 #[tokio::main]
@@ -49,31 +55,257 @@ async fn main() {
         .init();
 
     let index_path = std::env::var("TANTIVY_PATH").unwrap_or_else(|_| "debate_index".to_string());
+    let admin_password = std::env::var("ADMIN_PASSWORD").ok();
+
+    if admin_password.is_none() {
+        tracing::warn!("ADMIN_PASSWORD not set — admin routes will be disabled");
+    }
 
     let state = AppState {
         index: Arc::new(
             TantivyIndex::new(&index_path).expect("Failed to initialize Tantivy index"),
         ),
         jobs: Arc::new(RwLock::new(HashMap::new())),
+        admin_password,
+        sessions: Arc::new(RwLock::new(HashMap::new())),
+        used_nonces: Arc::new(RwLock::new(HashMap::new())),
     };
 
-    let api_router = Router::new()
-        .route("/upload", post(upload))
-        .route("/query", get(query))
-        .route("/card/:id", get(get_card))
-        .route("/progress/:id", get(get_progress))
-        .route("/stats", get(get_stats))
-        .layer(DefaultBodyLimit::disable());
-
-    let app = Router::new()
-        .nest("/api", api_router)
-        .fallback_service(ServeDir::new("public"))
-        .with_state(state);
+    let app = create_app(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+fn create_app(state: AppState) -> Router {
+    let admin_api = Router::new()
+        .route("/upload", post(upload))
+        .route("/progress/:id", get(get_progress))
+        .layer(DefaultBodyLimit::disable())
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_admin,
+        ));
+
+    let api_router = Router::new()
+        .route("/admin/login", post(admin_login))
+        .route("/admin/logout", post(admin_logout))
+        .route("/admin/ping", get(admin_ping))
+        .route("/query", get(query))
+        .route("/card/:id", get(get_card))
+        .route("/stats", get(get_stats))
+        .merge(admin_api);
+
+    Router::new()
+        .route("/admin", get(admin_redirect_handler))
+        .route("/admin.html", get(admin_redirect_handler))
+        .route("/admin.js", get(admin_js_handler))
+        .nest("/api", api_router)
+        .fallback_service(ServeDir::new("public"))
+        .with_state(state)
+}
+
+// --- Admin Auth Types ---
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    password: String,
+}
+
+#[derive(Serialize)]
+struct LoginResponse {
+    token: String,
+}
+
+// --- Admin Auth Middleware ---
+
+async fn require_admin(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    request: Request,
+    next: Next,
+) -> Response {
+    let nonce = request
+        .headers()
+        .get("x-nonce")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+
+    // Try Authorization header first, then cookie
+    let token = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(String::from)
+        .or_else(|| jar.get("admin_session").map(|c| c.value().to_string()));
+
+    let token = match token {
+        Some(t) => t,
+        None => {
+            return (StatusCode::UNAUTHORIZED, "Missing session token").into_response();
+        }
+    };
+
+    // Check token validity and expiry (24 hours)
+    {
+        let sessions = state.sessions.read().unwrap();
+        match sessions.get(&token) {
+            Some(created_at) => {
+                if created_at.elapsed() > std::time::Duration::from_secs(86400) {
+                    return (StatusCode::UNAUTHORIZED, "Token expired").into_response();
+                }
+            }
+            None => return (StatusCode::UNAUTHORIZED, "Invalid token").into_response(),
+        }
+    }
+
+    // Validate nonce (replay protection)
+    let nonce_val = match nonce {
+        Some(n) if !n.is_empty() => n,
+        _ => return (StatusCode::BAD_REQUEST, "Missing X-Nonce header").into_response(),
+    };
+
+    {
+        let mut nonces = state.used_nonces.write().unwrap();
+        // Prune nonces older than 5 minutes
+        let cutoff = Instant::now() - std::time::Duration::from_secs(300);
+        nonces.retain(|_, t| *t > cutoff);
+
+        if nonces.contains_key(&nonce_val) {
+            return (StatusCode::CONFLICT, "Nonce already used").into_response();
+        }
+        nonces.insert(nonce_val, Instant::now());
+    }
+
+    next.run(request).await
+}
+
+async fn admin_redirect_handler(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Response {
+    let token = jar.get("admin_session").map(|c| c.value().to_string());
+    
+    if let Some(t) = token {
+        let sessions = state.sessions.read().unwrap();
+        if let Some(created_at) = sessions.get(&t) {
+            if created_at.elapsed() < std::time::Duration::from_secs(86400) {
+                // Valid session, serve the admin page from PRIVATE
+                return (
+                    [(axum::http::header::CACHE_CONTROL, "no-store")],
+                    axum::response::Html(
+                        std::fs::read_to_string("private/admin.html").unwrap_or_else(|_| "Admin file missing".to_string())
+                    )
+                ).into_response();
+            }
+        }
+    }
+    
+    // Not authenticated, redirect to login
+    Redirect::temporary("/login.html").into_response()
+}
+
+async fn admin_js_handler(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Response {
+    let token = jar.get("admin_session").map(|c| c.value().to_string());
+    
+    if let Some(t) = token {
+        let sessions = state.sessions.read().unwrap();
+        if let Some(created_at) = sessions.get(&t) {
+            if created_at.elapsed() < std::time::Duration::from_secs(86400) {
+                // Valid session, serve the admin JS from PRIVATE
+                return (
+                    [
+                        (axum::http::header::CONTENT_TYPE, "application/javascript"),
+                        (axum::http::header::CACHE_CONTROL, "no-store")
+                    ],
+                    std::fs::read_to_string("private/admin.js").unwrap_or_default()
+                ).into_response();
+            }
+        }
+    }
+    
+    (StatusCode::UNAUTHORIZED, "Unauthenticated").into_response()
+}
+
+// --- Admin Login / Logout ---
+
+async fn admin_login(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(req): Json<LoginRequest>
+) -> (CookieJar, Response) {
+    let admin_password = match &state.admin_password {
+        Some(p) => p,
+        None => {
+            return (jar, (StatusCode::FORBIDDEN, "Admin access is not configured").into_response())
+        }
+    };
+
+    if req.password != *admin_password {
+        return (jar, (StatusCode::UNAUTHORIZED, "Invalid password").into_response());
+    }
+
+    let token = uuid::Uuid::new_v4().to_string();
+    state
+        .sessions
+        .write()
+        .unwrap()
+        .insert(token.clone(), Instant::now());
+
+    tracing::info!("Admin session created");
+
+    // Set cookie
+    let cookie = Cookie::build(("admin_session", token.clone()))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Strict)
+        .max_age(time::Duration::hours(24))
+        .build();
+
+    (jar.add(cookie), (StatusCode::OK, Json(LoginResponse { token })).into_response())
+}
+
+async fn admin_logout(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    headers: HeaderMap
+) -> (CookieJar, Response) {
+    // Check both Authorization header and cookie
+    let token = headers.get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(String::from)
+        .or_else(|| jar.get("admin_session").map(|c| c.value().to_string()));
+
+    if let Some(t) = token {
+        state.sessions.write().unwrap().remove(&t);
+        tracing::info!("Admin session invalidated");
+    }
+
+    // Remove the cookie
+    (jar.remove(Cookie::from("admin_session")), (StatusCode::OK, "Logged out").into_response())
+}
+
+async fn admin_ping(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Response {
+    let token = jar.get("admin_session").map(|c| c.value().to_string());
+    if let Some(t) = token {
+        let sessions = state.sessions.read().unwrap();
+        if let Some(created_at) = sessions.get(&t) {
+            if created_at.elapsed() < std::time::Duration::from_secs(86400) {
+                return (StatusCode::OK, "Authenticated").into_response();
+            }
+        }
+    }
+    (StatusCode::UNAUTHORIZED, "Unauthenticated").into_response()
 }
 
 use futures::TryStreamExt;
@@ -437,6 +669,86 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+    use axum_test::TestServer;
+
+    #[tokio::test]
+    async fn test_security_redirection() {
+        let index_path = tempfile::tempdir().unwrap();
+        let state = AppState {
+            index: Arc::new(TantivyIndex::new(index_path.path().to_str().unwrap()).unwrap()),
+            jobs: Arc::new(RwLock::new(HashMap::new())),
+            admin_password: Some("testpass".to_string()),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            used_nonces: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        let server = TestServer::new(create_app(state)).unwrap();
+
+        // 1. Unauthenticated /admin should redirect to /login.html
+        let response = server.get("/admin").await;
+        response.assert_status(StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(response.headers().get("location").unwrap(), "/login.html");
+
+        // 2. Public stats should be accessible
+        let response = server.get("/api/stats").await;
+        response.assert_status(StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_auth_and_nonce_security() {
+        let index_path = tempfile::tempdir().unwrap();
+        let state = AppState {
+            index: Arc::new(TantivyIndex::new(index_path.path().to_str().unwrap()).unwrap()),
+            jobs: Arc::new(RwLock::new(HashMap::new())),
+            admin_password: Some("testpass".to_string()),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            used_nonces: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        let server = TestServer::new(create_app(state)).unwrap();
+
+        // 1. Wrong password login
+        let response = server.post("/api/admin/login")
+            .json(&serde_json::json!({ "password": "wrong" }))
+            .await;
+        response.assert_status(StatusCode::UNAUTHORIZED);
+
+        // 2. Correct login
+        let response = server.post("/api/admin/login")
+            .json(&serde_json::json!({ "password": "testpass" }))
+            .await;
+        response.assert_status(StatusCode::OK);
+        let cookie = response.cookie("admin_session");
+        assert!(cookie.value().len() > 0);
+
+        // 3. Unauthorized upload attempt (no token/nonce)
+        let response = server.post("/api/upload").await;
+        response.assert_status(StatusCode::UNAUTHORIZED);
+
+        // 4. Authorized upload (with cookie + fresh nonce)
+        let nonce = uuid::Uuid::new_v4().to_string();
+        
+        // Actually, let's use a simpler way with axum-test multipart
+        let response = server.post("/api/upload")
+            .add_cookie(cookie.clone())
+            .add_header("x-nonce", &nonce)
+            .multipart(axum_test::multipart::MultipartForm::new()
+                .add_text("file", "dummy content"))
+            .await;
+        
+        // Should NOT be UNAUTHORIZED or CONFLICT (nonce reuse)
+        assert_ne!(response.status_code(), StatusCode::UNAUTHORIZED);
+        assert_ne!(response.status_code(), StatusCode::CONFLICT);
+        // It might be 400 because name is not correct but auth is passed.
+        // Actually it should be 200/400 but definitely not 401.
+
+        // 5. Replay attack attempt (reuse same nonce)
+        let response = server.post("/api/upload")
+            .add_cookie(cookie.clone())
+            .add_header("x-nonce", &nonce)
+            .await;
+        response.assert_status(StatusCode::CONFLICT); // Nonce reuse
+    }
 
     #[test]
     fn test_zip_extraction() {

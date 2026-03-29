@@ -1,3 +1,23 @@
+// --- Auth & API Helpers ---
+
+function authHeaders() {
+  return {
+    'X-Nonce': crypto.randomUUID(),
+    // Note: session is handled via HttpOnly cookie
+  };
+}
+
+function handleAuthError(res) {
+  if (res.status === 401) {
+    // Session expired or invalid, redirect to login
+    window.location.href = '/login.html';
+    return true;
+  }
+  return false;
+}
+
+// --- DOM Elements ---
+const logoutBtn = document.getElementById('logout-btn');
 const uploadZone = document.getElementById('upload-zone');
 const fileInput = document.getElementById('file-input');
 const uploadStatus = document.getElementById('upload-status');
@@ -5,29 +25,48 @@ const statCount = document.getElementById('stat-count');
 const statSize = document.getElementById('stat-size');
 const statPending = document.getElementById('stat-pending');
 
-/** UPLOAD LOGIC */
-uploadZone.addEventListener('click', () => fileInput.click());
-uploadZone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  uploadZone.classList.add('dragover');
-});
-uploadZone.addEventListener('dragleave', (e) => {
-  e.preventDefault();
-  uploadZone.classList.remove('dragover');
-});
-uploadZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  uploadZone.classList.remove('dragover');
-  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    handleUpload(e.dataTransfer.files[0]);
+// --- Logout ---
+async function handleLogout() {
+  try {
+    await fetch('/api/admin/logout', {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+  } catch (e) {
+    console.error('Logout failed:', e);
   }
-});
+  window.location.href = '/login.html';
+}
 
-fileInput.addEventListener('change', (e) => {
-  if (e.target.files && e.target.files.length > 0) {
-    handleUpload(e.target.files[0]);
-  }
-});
+if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+
+/** UPLOAD LOGIC */
+if (uploadZone) {
+  uploadZone.addEventListener('click', () => fileInput.click());
+  uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('dragover');
+  });
+  uploadZone.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+  });
+  uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleUpload(e.dataTransfer.files[0]);
+    }
+  });
+}
+
+if (fileInput) {
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleUpload(e.target.files[0]);
+    }
+  });
+}
 
 async function handleUpload(file) {
   if (!file.name.endsWith('.docx') && !file.name.endsWith('.zip') && !file.name.endsWith('.csv')) {
@@ -43,8 +82,11 @@ async function handleUpload(file) {
   try {
     const res = await fetch('/api/upload', {
       method: 'POST',
+      headers: authHeaders(),
       body: formData
     });
+
+    if (handleAuthError(res)) return;
 
     if (!res.ok) {
       const errText = await res.text();
@@ -65,7 +107,12 @@ async function handleUpload(file) {
 
 async function pollJobProgress(jobId) {
   try {
-    const res = await fetch(`/api/progress/${jobId}`);
+    const res = await fetch(`/api/progress/${jobId}`, {
+      headers: authHeaders(),
+    });
+
+    if (handleAuthError(res)) return;
+
     if (!res.ok) {
       showUploadStatus('Failed to fetch job progress', false);
       return;
@@ -104,20 +151,21 @@ async function pollJobProgress(jobId) {
 }
 
 function showUploadStatus(msg, isSuccess) {
+  if (!uploadStatus) return;
   uploadStatus.className = 'status-msg';
   if (isSuccess === true) uploadStatus.classList.add('status-success');
   if (isSuccess === false) uploadStatus.classList.add('status-error');
   uploadStatus.textContent = msg;
 }
 
-/** STATS LOGIC */
+/** STATS LOGIC (public — no auth needed) */
 async function updateStats() {
   try {
     const res = await fetch('/api/stats');
     if (!res.ok) return;
     const stats = await res.json();
-    statCount.textContent = stats.num_docs.toLocaleString();
-    statSize.textContent = formatBytes(stats.index_size_bytes);
+    if (statCount) statCount.textContent = stats.num_docs.toLocaleString();
+    if (statSize) statSize.textContent = formatBytes(stats.index_size_bytes);
     if (statPending) statPending.textContent = (stats.pending_cards || 0).toLocaleString();
   } catch (e) {
     console.error('Failed to fetch stats:', e);

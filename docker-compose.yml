@@ -10,6 +10,7 @@ services:
     environment:
       - RUST_LOG=info
       - TANTIVY_PATH=/data/debate_index
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
 
 volumes:
   zhengming_data:
