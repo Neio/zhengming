@@ -1,25 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZhengMing (争鸣): A Debate Search Engine</title>
   <link rel="stylesheet" href="/style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:ital,wght@0,700;1,700&display=swap"
+    rel="stylesheet">
 </head>
+
 <body>
   <!-- Home View -->
   <div id="home-view" class="container">
     <div class="hero-banner">
       <h1 class="hero-logo-text">ZhengMing <span class="chinese">争鸣</span></h1>
-      <p class="hero-tagline">High-performance debate evidence search</p>
+      <p class="hero-tagline">Debate Evidence Search</p>
     </div>
 
     <div class="row">
       <input type="text" id="search-input" class="search" placeholder="Search..." autocomplete="off">
       <button type="button" id="search-btn" class="submit">Submit</button>
     </div>
-    
+
     <div class="search-options">
       <label class="checkbox-container">
         <input type="checkbox" id="search-body-check">
@@ -27,7 +31,7 @@
         Search Card Body (Slow)
       </label>
     </div>
-    
+
   </div>
 
   <!-- Search Results View -->
@@ -50,19 +54,7 @@
     </header>
 
     <div class="results-layout">
-      <aside class="sidebar">
-        <div class="filter-box">
-          <h3>Filters (Coming Soon)</h3>
-          <p>This space is reserved for advanced filters.</p>
-        </div>
-        <div class="stats-box" id="stats-box">
-          <h3>Database Stats</h3>
-          <p>Total Cards: <span id="stat-count">-</span></p>
-          <p>Index Size: <span id="stat-size">-</span></p>
-          <a href="/stats.html" style="display:block; margin-top:15px; color:#c41e3a; font-weight:800; text-decoration:none;">View Detailed Insights →</a>
-        </div>
-      </aside>
-      
+
       <main class="results-main">
         <div id="results-count" class="results-count"></div>
         <div id="cards-container" class="cards-container">
@@ -74,4 +66,5 @@
 
   <script src="/app.js"></script>
 </body>
+
 </html>

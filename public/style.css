@@ -238,30 +238,8 @@ header h1 {
 .results-layout {
   display: flex;
   padding: 30px;
-  gap: 30px;
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
-}
-
-.sidebar {
-  width: 250px;
-  flex-shrink: 0;
-}
-
-.filter-box {
-  background: white;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-  border: 1px solid #eee;
-}
-
-.filter-box h3 {
-  margin-top: 0;
-  font-size: 16px;
-  color: #555;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 10px;
 }
 
 .results-main {
@@ -338,32 +316,6 @@ header h1 {
   border: 1px solid #eaeaea;
 }
 
-.stats-box {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-  margin-top: 1.5rem;
-}
-
-.stats-box h3 {
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05rem;
-  color: #666;
-  margin-bottom: 1rem;
-}
-
-.stats-box p {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin: 0.5rem 0;
-  color: #333;
-}
-
-.stats-box span {
-  color: #c41e3a; /* Accent color */
-}
 
 .card-tag {
   font-size: 14pt;
@@ -527,4 +479,177 @@ header h1 {
   top: 2px;
   width: 4px;
   height: 8px;
+}
+
+/* ======================================================
+   RESPONSIVE / MOBILE STYLES
+   ====================================================== */
+
+/* --- Tablet (≤ 900px) --- */
+@media (max-width: 900px) {
+  .results-layout {
+    padding: 20px 16px;
+    gap: 20px;
+  }
+
+  .sidebar {
+    width: 200px;
+  }
+
+  .hero-logo-text {
+    font-size: 3.5rem;
+  }
+
+  .hero-logo-text .chinese {
+    font-size: 1.8rem;
+  }
+}
+
+/* --- Mobile (≤ 680px) --- */
+@media (max-width: 680px) {
+
+  /* Header: stack logo on top, search below */
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+
+  .logo-small-container {
+    justify-content: center;
+  }
+
+  .logo-small {
+    font-size: 16px;
+  }
+
+  .header-search-row {
+    max-width: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .search-small {
+    flex: 1 1 0;
+    min-width: 0;
+    border-radius: 20px;
+    font-size: 14px;
+  }
+
+  .submit-small {
+    border-left: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 13px;
+    padding: 8px 14px;
+  }
+
+  .header-search-options {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+
+  /* Results: single column, full width */
+  .results-layout {
+    flex-direction: column;
+    padding: 14px 12px;
+  }
+
+  /* Card padding & layout */
+  .card-detail {
+    padding: 16px 14px;
+  }
+
+  .card-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Tag and actions on separate lines when narrow */
+  .card-tag {
+    font-size: 12pt;
+    flex: 1 1 100%;
+  }
+
+  .card-actions {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+  }
+
+  .action-btn {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+
+  /* Metadata: allow wrapping, smaller text */
+  .card-metadata,
+  .card-opencaselist-meta {
+    font-size: 0.78rem;
+    gap: 4px;
+  }
+
+  /* Summary / Cite blocks */
+  .card-summary,
+  .card-cite {
+    padding: 8px 10px;
+    font-size: 0.88rem;
+  }
+
+  .card-body {
+    font-size: 10pt;
+  }
+
+  /* Cards gap */
+  .cards-container {
+    gap: 18px;
+  }
+
+  /* Home page hero */
+  .hero-banner {
+    padding: 40px 20px 20px;
+    margin-bottom: 10px;
+  }
+
+  /* Stack Chinese characters below English on mobile */
+  .hero-logo-text {
+    font-size: 2rem;
+    letter-spacing: 0;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  .hero-logo-text .chinese {
+    display: block;    /* own line */
+    font-size: 1.6rem;
+    margin-left: 0;
+    margin-top: 4px;
+  }
+
+  .hero-tagline {
+    font-size: 0.7rem;
+    text-align: center;
+    letter-spacing: 1px;
+    margin-top: 8px;
+  }
+
+  /* Search bar */
+  .container {
+    justify-content: flex-start;
+    padding-top: 0;
+  }
+
+  .row {
+    width: 92%;
+  }
+
+  .search {
+    font-size: 15px;
+    padding: 11px 16px;
+  }
+
+  .search-options {
+    justify-content: center;
+    margin-top: 12px;
+  }
 }

@@ -8,8 +8,6 @@ const DOM = {
   logoSmall: document.querySelector('.logo-small-container'),
   cardsContainer: document.getElementById('cards-container'),
   resultsCount: document.getElementById('results-count'),
-  statCount: document.getElementById('stat-count'),
-  statSize: document.getElementById('stat-size'),
   searchBodyCheck: document.getElementById('search-body-check'),
   headerSearchBodyCheck: document.getElementById('header-search-body-check'),
 };
@@ -296,26 +294,3 @@ function generateVerbatimHTML(card) {
   return html;
 }
 
-/** STATS LOGIC */
-async function updateStats() {
-    try {
-        const res = await fetch('/api/stats');
-        if (!res.ok) return;
-        const stats = await res.json();
-        DOM.statCount.textContent = stats.num_docs.toLocaleString();
-        DOM.statSize.textContent = formatBytes(stats.index_size_bytes);
-    } catch (e) {
-        console.error('Failed to fetch stats:', e);
-    }
-}
-
-function formatBytes(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Initial stats fetch
-updateStats();
