@@ -14,6 +14,9 @@ body {
   background-color: var(--bg-color);
   font-family: var(--font-body);
   color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 .hidden {
@@ -26,7 +29,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  flex: 1;
 }
 
 .logo {
@@ -168,7 +171,7 @@ header h1 {
 
 /* --- SEARCH RESULTS VIEW --- */
 .results-container {
-  min-height: 100vh;
+  flex: 1;
   background: #fdfdfd;
   color: #333;
 }
@@ -652,4 +655,22 @@ header h1 {
     justify-content: center;
     margin-top: 12px;
   }
+}
+
+/* --- FOOTER --- */
+footer {
+  text-align: center;
+  padding: 3rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-color);
+  background: #fdfdfd;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: auto;
+}
+
+footer p {
+  margin: 0;
+  opacity: 0.8;
 }

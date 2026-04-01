@@ -8,7 +8,6 @@ const DOM = {
   logoSmall: document.querySelector('.logo-small-container'),
   cardsContainer: document.getElementById('cards-container'),
   resultsCount: document.getElementById('results-count'),
-  searchBodyCheck: document.getElementById('search-body-check'),
   headerSearchBodyCheck: document.getElementById('header-search-body-check'),
 };
 
@@ -27,18 +26,10 @@ function showResults() {
   DOM.homeView.classList.add('hidden');
   DOM.searchView.classList.remove('hidden');
   DOM.headerSearchInput.value = DOM.searchInput.value;
-  DOM.headerSearchBodyCheck.checked = DOM.searchBodyCheck.checked;
   DOM.headerSearchInput.focus();
 }
 
-// Synchronize checkboxes
-DOM.searchBodyCheck.addEventListener('change', () => {
-    DOM.headerSearchBodyCheck.checked = DOM.searchBodyCheck.checked;
-});
-DOM.headerSearchBodyCheck.addEventListener('change', () => {
-    DOM.searchBodyCheck.checked = DOM.headerSearchBodyCheck.checked;
-});
-
+// Sync and handlers
 DOM.logoSmall.addEventListener('click', showHome);
 
 /** SEARCH LOGIC */
@@ -53,7 +44,7 @@ async function performSearch(query) {
   DOM.resultsCount.textContent = '';
 
   try {
-    const isBodyChecked = DOM.searchBodyCheck.checked;
+    const isBodyChecked = DOM.headerSearchBodyCheck.checked;
     const res = await fetch(`/api/query?q=${encodeURIComponent(query)}&body=${isBodyChecked}`);
     if (!res.ok) throw new Error('Search failed');
     const data = await res.json();
