@@ -50,6 +50,9 @@ const categorySelect = document.getElementById('mgmt-category-select');
 const refreshMgmtBtn = document.getElementById('refresh-mgmt-btn');
 const categoryListContainer = document.getElementById('category-list-container');
 const clearIndexBtn = document.getElementById('clear-index-btn');
+const auditLogsContainer = document.getElementById('audit-logs-container');
+const refreshLogsBtn = document.getElementById('refresh-logs-btn');
+const downloadLogsBtn = document.getElementById('download-logs-btn');
 
 let pendingFile = null;
 let onConfirm = null;
@@ -227,6 +230,7 @@ async function pollJobProgress(jobId) {
     if (job.status === 'Completed') {
       showUploadStatus(`Success! Finished indexing ${job.cards_indexed} cards!`, true);
       updateStats();
+      updateAuditLogs();
     } else {
       setTimeout(() => pollJobProgress(jobId), 300);
     }
@@ -284,6 +288,7 @@ if (clearIndexBtn) {
           if (res.ok) {
             showUploadStatus('Database cleared successfully.', true);
             updateStats();
+            updateAuditLogs();
           } else {
             const err = await res.text();
             showUploadStatus(`Failed to clear database: ${err}`, false);
@@ -379,6 +384,7 @@ window.deleteBatch = function(field, value) {
         if (res.ok) {
           showUploadStatus(`Successfully deleted all cards for ${field}="${displayValue}"`, true);
           updateStats(); // This will trigger updateManagementList()
+          updateAuditLogs();
         } else {
           const err = await res.text();
           showUploadStatus(`Failed to delete: ${err}`, false);
@@ -393,5 +399,50 @@ window.deleteBatch = function(field, value) {
 if (categorySelect) categorySelect.addEventListener('change', updateManagementList);
 if (refreshMgmtBtn) refreshMgmtBtn.addEventListener('click', updateManagementList);
 
+async function updateAuditLogs() {
+  if (!auditLogsContainer) return;
+  try {
+    const res = await fetch('/api/admin/audit-logs', {
+      headers: authHeaders(),
+    });
+    if (handleAuthError(res)) return;
+    if (!res.ok) return;
+    const logs = await res.json();
+    
+    if (!logs || logs.length === 0) {
+      auditLogsContainer.innerHTML = `<div style="padding: 20px; text-align: center; color: #aaa;">No audit logs found.</div>`;
+      return;
+    }
+
+    let html = '';
+    logs.forEach(log => {
+      const date = new Date(log.timestamp).toLocaleString();
+      html += `
+        <div style="padding: 8px; border-bottom: 1px solid #eee; font-size: 0.85rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+            <strong style="color: #333;">${log.action}</strong>
+            <span style="color: #999; font-size: 0.75rem;">${date}</span>
+          </div>
+          <div style="color: #666; font-family: monospace; font-size: 0.8rem; word-break: break-all;">${log.details}</div>
+        </div>
+      `;
+    });
+    auditLogsContainer.innerHTML = html;
+  } catch (e) {
+    console.error('Failed to update audit logs:', e);
+  }
+}
+
+if (refreshLogsBtn) refreshLogsBtn.addEventListener('click', updateAuditLogs);
+
+if (downloadLogsBtn) {
+  downloadLogsBtn.addEventListener('click', () => {
+    window.location.href = '/api/admin/audit-logs/download';
+  });
+}
+
 // Initial list population
-setTimeout(updateManagementList, 500);
+setTimeout(() => {
+  updateManagementList();
+  updateAuditLogs();
+}, 500);

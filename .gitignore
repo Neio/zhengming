@@ -3,3 +3,4 @@
 /test_storage
 .env
 .DS_Store
+audit.log*

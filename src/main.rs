@@ -2,7 +2,9 @@ mod card;
 mod csv_parser;
 mod index;
 mod parser;
+mod audit;
 
+use crate::audit::AuditLogger;
 use crate::card::Card;
 use crate::csv_parser::OpenCaselistParser;
 use crate::index::TantivyIndex;
@@ -44,6 +46,7 @@ struct AppState {
     admin_password: Option<String>,
     sessions: Arc<RwLock<HashMap<String, Instant>>>,
     used_nonces: Arc<RwLock<HashMap<String, Instant>>>,
+    audit: Arc<AuditLogger>,
 }
 
 #[tokio::main]
@@ -69,6 +72,7 @@ async fn main() {
         admin_password,
         sessions: Arc::new(RwLock::new(HashMap::new())),
         used_nonces: Arc::new(RwLock::new(HashMap::new())),
+        audit: Arc::new(AuditLogger::new(&index_path)),
     };
 
     let app = create_app(state);
@@ -85,6 +89,8 @@ fn create_app(state: AppState) -> Router {
         .route("/progress/:id", get(get_progress))
         .route("/admin/clear-index", post(clear_index))
         .route("/admin/delete-batch", post(delete_batch))
+        .route("/admin/audit-logs", get(get_audit_logs))
+        .route("/admin/audit-logs/download", get(download_audit_logs))
         .layer(DefaultBodyLimit::disable())
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -276,6 +282,7 @@ async fn admin_login(
     };
 
     if req.password != *admin_password {
+        state.audit.log("Login Failed", "Incorrect password", None);
         return (jar, (StatusCode::UNAUTHORIZED, "Invalid password").into_response());
     }
 
@@ -287,6 +294,7 @@ async fn admin_login(
         .insert(token.clone(), Instant::now());
 
     tracing::info!("Admin session created");
+    state.audit.log("Login Successful", "Admin session started", None);
 
     // Set cookie
     let cookie = Cookie::build(("admin_session", token.clone()))
@@ -314,6 +322,7 @@ async fn admin_logout(
     if let Some(t) = token {
         state.sessions.write().unwrap().remove(&t);
         tracing::info!("Admin session invalidated");
+        state.audit.log("Logout", "Admin session ended", None);
     }
 
     // Remove the cookie
@@ -347,6 +356,25 @@ async fn get_progress(Path(id): Path<String>, State(state): State<AppState>) -> 
         (StatusCode::OK, Json(job.clone())).into_response()
     } else {
         (StatusCode::NOT_FOUND, "Job not found").into_response()
+    }
+}
+
+async fn get_audit_logs(State(state): State<AppState>) -> impl IntoResponse {
+    let logs = state.audit.get_last_entries(50);
+    Json(logs)
+}
+
+async fn download_audit_logs(State(state): State<AppState>) -> Response {
+    let path = state.audit.get_log_path();
+    match tokio::fs::read(&path).await {
+        Ok(data) => (
+            [
+                (header::CONTENT_TYPE, "text/plain"),
+                (header::CONTENT_DISPOSITION, "attachment; filename=\"audit.log\""),
+            ],
+            data,
+        ).into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "Log file not found").into_response(),
     }
 }
 
@@ -404,6 +432,9 @@ async fn upload(State(state): State<AppState>, mut multipart: Multipart) -> Resp
 
         state.jobs.write().unwrap().insert(job_id.clone(), initial_progress.clone());
         
+        let details = format!("File: {}, Year: {:?}", file_name, year_val);
+        state.audit.log("Upload Started", &details, None);
+
         let job_progress_clone = initial_progress.clone();
         let state_clone = state.clone();
         let file_name_clone = file_name.clone();
@@ -414,7 +445,7 @@ async fn upload(State(state): State<AppState>, mut multipart: Multipart) -> Resp
                 match tokio::fs::read(&temp_path).await {
                     Ok(data) => {
                         job_progress_clone.write().unwrap().status = "Parsing docx...".to_string();
-                        let parser = CardParser::new(file_name_clone, data, year_clone);
+                        let parser = CardParser::new(file_name_clone.clone(), data, year_clone);
                         match parser.parse() {
                             Ok(cards) => {
                                 job_progress_clone.write().unwrap().processed_files = 1;
@@ -425,8 +456,13 @@ async fn upload(State(state): State<AppState>, mut multipart: Multipart) -> Resp
                                     Ok(_) => {
                                         job_progress_clone.write().unwrap().cards_uploaded = cards.len();
                                         job_progress_clone.write().unwrap().status = "Completed".to_string();
+                                        state_clone.audit.log("Upload Completed", &format!("Indexed {} cards from {}", cards.len(), file_name_clone), None);
                                     }
-                                    Err(e) => job_progress_clone.write().unwrap().error = Some(format!("Indexing error: {}", e)),
+                                    Err(e) => {
+                                        let err_msg = format!("Indexing error: {}", e);
+                                        job_progress_clone.write().unwrap().error = Some(err_msg.clone());
+                                        state_clone.audit.log("Upload Failed", &format!("{} - {}", file_name_clone, err_msg), None);
+                                    },
                                 }
                             }
                             Err(e) => job_progress_clone.write().unwrap().error = Some(format!("Parser error: {}", e)),
@@ -501,6 +537,7 @@ async fn upload(State(state): State<AppState>, mut multipart: Multipart) -> Resp
                     prog.cards_indexed = total_indexed;
                     prog.cards_uploaded = total_indexed;
                     prog.status = "Completed".to_string();
+                    state_clone.audit.log("CSV Upload Completed", &format!("Indexed {} cards from {}", total_indexed, file_name_clone), None);
                 }
             } else if file_name_clone.ends_with(".zip") {
                 match tokio::fs::read(&temp_path).await {
@@ -559,6 +596,7 @@ async fn upload(State(state): State<AppState>, mut multipart: Multipart) -> Resp
                                 Ok(_) => {
                                     job_progress_clone.write().unwrap().cards_uploaded = total_cards;
                                     job_progress_clone.write().unwrap().status = "Completed".to_string();
+                                    state_clone.audit.log("ZIP Upload Completed", &format!("Indexed {} cards from {}", total_cards, file_name_clone), None);
                                 }
                                 Err(e) => job_progress_clone.write().unwrap().error = Some(format!("Indexing error: {}", e)),
                             }
@@ -586,7 +624,10 @@ struct DeleteBatchRequest {
 
 async fn clear_index(State(state): State<AppState>) -> Response {
     match state.index.clear_index() {
-        Ok(_) => (StatusCode::OK, "Index cleared").into_response(),
+        Ok(_) => {
+            state.audit.log("Clear Index", "Entire database cleared", None);
+            (StatusCode::OK, "Index cleared").into_response()
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to clear index: {}", e),
@@ -600,7 +641,10 @@ async fn delete_batch(
     Json(req): Json<DeleteBatchRequest>,
 ) -> Response {
     match state.index.delete_by_term(&req.field, &req.value) {
-        Ok(_) => (StatusCode::OK, "Batch deleted").into_response(),
+        Ok(_) => {
+            state.audit.log("Delete Batch", &format!("Field: {}, Value: {}", req.field, req.value), None);
+            (StatusCode::OK, "Batch deleted").into_response()
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to delete batch: {}", e),
@@ -699,6 +743,7 @@ mod tests {
             admin_password: Some("testpass".to_string()),
             sessions: Arc::new(RwLock::new(HashMap::new())),
             used_nonces: Arc::new(RwLock::new(HashMap::new())),
+            audit: Arc::new(AuditLogger::new(index_path.path().to_str().unwrap())),
         };
 
         let server = TestServer::new(create_app(state)).unwrap();
@@ -722,6 +767,7 @@ mod tests {
             admin_password: Some("testpass".to_string()),
             sessions: Arc::new(RwLock::new(HashMap::new())),
             used_nonces: Arc::new(RwLock::new(HashMap::new())),
+            audit: Arc::new(AuditLogger::new(index_path.path().to_str().unwrap())),
         };
 
         let server = TestServer::new(create_app(state)).unwrap();
@@ -778,6 +824,7 @@ mod tests {
             admin_password: Some("testpass".to_string()),
             sessions: Arc::new(RwLock::new(HashMap::new())),
             used_nonces: Arc::new(RwLock::new(HashMap::new())),
+            audit: Arc::new(AuditLogger::new(index_path.path().to_str().unwrap())),
         };
 
         let server = TestServer::new(create_app(state)).unwrap();
