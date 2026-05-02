@@ -39,6 +39,7 @@ impl CardParser {
                                 &current_hat,
                                 &current_block,
                                 &current_pocket,
+                                &docx.styles,
                             ) {
                                 cards.append(&mut c);
                             }
@@ -58,6 +59,7 @@ impl CardParser {
                 &current_hat,
                 &current_block,
                 &current_pocket,
+                &docx.styles,
             ) {
                 cards.append(&mut c);
             }
@@ -72,6 +74,7 @@ impl CardParser {
         hat: &str,
         block: &str,
         pocket: &str,
+        styles: &Styles,
     ) -> Result<Vec<Card>, String> {
         if paragraphs.is_empty() {
             return Err("No paragraphs".to_string());
@@ -82,29 +85,20 @@ impl CardParser {
             .trim_matches(|c| c == ',' || c == ' ')
             .to_string();
 
-        // Find citation and metadata
         let mut tag_sub = String::new();
         let mut cite = String::new();
         let mut body_paragraphs = Vec::new();
 
-        // Refined Cite detection for Verbatim
         for (i, p) in paragraphs.iter().enumerate().skip(1) {
             let style = p.property.style.clone().map(|s| s.val).unwrap_or_default();
             let text = self.get_text(p);
 
-            // Heading 5 or 6 are explicit Cites in many templates
-            if style == "Heading5"
-                || style == "Heading6"
-                || style == "Heading 5"
-                || style == "Heading 6"
-            {
+            if style == "Heading5" || style == "Heading6" || style == "Heading 5" || style == "Heading 6" {
                 cite = text;
                 body_paragraphs = paragraphs[i + 1..].to_vec();
                 break;
             }
 
-            // Heuristic for "Normal" style cites:
-            // Often bolded or contains a date (number) and is the first non-empty paragraph after tag
             if i == 1 && !text.is_empty() && text.chars().any(|c| c.is_numeric()) {
                 cite = text;
                 body_paragraphs = paragraphs[i + 1..].to_vec();
@@ -118,12 +112,7 @@ impl CardParser {
         }
 
         if body_paragraphs.is_empty() {
-            // Fallback if no cite found via heuristic
-            body_paragraphs = if paragraphs.len() > 1 {
-                paragraphs[1..].to_vec()
-            } else {
-                Vec::new()
-            };
+            body_paragraphs = if paragraphs.len() > 1 { paragraphs[1..].to_vec() } else { Vec::new() };
         }
 
         let mut highlighted_text = String::new();
@@ -133,103 +122,167 @@ impl CardParser {
         let mut emphasis = Vec::new();
         let mut body = Vec::new();
 
-        let mut p_index = 0;
-        for p in &body_paragraphs {
-            let mut j = 0;
-            let p_text = self.get_text(p);
-            body.push(p_text.clone());
+        for (p_index, p) in body_paragraphs.iter().enumerate() {
+            let mut current_utf16_offset = 0;
+            let mut p_text = String::new();
 
-            for child in &p.children {
-                if let ParagraphChild::Run(r) = child {
-                    let run_text = self.get_run_text(r);
-                    if run_text.trim().is_empty() {
-                        continue;
-                    }
+            // Internal helper for recursive processing
+            fn process_children(
+                children: &[ParagraphChild],
+                p_index: i32,
+                offset: &mut usize,
+                p_text: &mut String,
+                highlights: &mut Vec<Vec<i32>>,
+                underlines: &mut Vec<Vec<i32>>,
+                bold: &mut Vec<Vec<i32>>,
+                emphasis: &mut Vec<Vec<i32>>,
+                highlighted_text: &mut String,
+                parser: &CardParser,
+                styles: &Styles,
+                is_para_underlined: bool,
+                is_para_bold: bool
+            ) {
+                for child in children {
+                    match child {
+                        ParagraphChild::Run(r) => {
+                            let run_text = parser.get_run_text(r);
+                            if run_text.is_empty() { continue; }
 
-                    if let Some(start) = p_text[j..].find(&run_text) {
-                        let start = j + start;
-                        let end = start + run_text.len();
+                            let run_len_utf16 = run_text.encode_utf16().count();
+                            let start = *offset as i32;
+                            let end = (*offset + run_len_utf16) as i32;
 
-                        if r.run_property.highlight.is_some() {
-                            highlights.push(vec![p_index, start as i32, end as i32]);
-                            highlighted_text.push(' ');
-                            highlighted_text.push_str(&run_text);
+                            // Check direct formatting OR Run Style OR Paragraph Style
+                            let is_highlighted = r.run_property.highlight.is_some();
+                            let is_underlined = is_para_underlined || 
+                                               r.run_property.underline.is_some() || 
+                                               parser.style_has_underline(r.run_property.style.as_ref(), styles);
+                            let is_bold = is_para_bold || 
+                                         r.run_property.bold.is_some() || 
+                                         parser.style_has_bold(r.run_property.style.as_ref(), styles);
+
+                            if is_highlighted {
+                                highlights.push(vec![p_index, start, end]);
+                                highlighted_text.push(' ');
+                                highlighted_text.push_str(&run_text);
+                            }
+                            if is_underlined {
+                                underlines.push(vec![p_index, start, end]);
+                            }
+                            if is_bold {
+                                bold.push(vec![p_index, start, end]);
+                            }
+                            
+                            // Check for "Emphasis" style specifically as it's often used for Verbatim
+                            if let Some(style) = &r.run_property.style {
+                                if style.val == "Emphasis" || style.val == "Underline" {
+                                    emphasis.push(vec![p_index, start, end]);
+                                }
+                            }
+                            
+                            p_text.push_str(&run_text);
+                            *offset += run_len_utf16;
                         }
-                        if r.run_property.underline.is_some() {
-                            underlines.push(vec![p_index, start as i32, end as i32]);
-                        }
-                        if r.run_property.bold.is_some() {
-                            bold.push(vec![p_index, start as i32, end as i32]);
-                        }
-                        // Emphasis is often a style name in the original project
-                        if let Some(style) = &r.run_property.style {
-                            if style.val == "Emphasis" {
-                                emphasis.push(vec![p_index, start as i32, end as i32]);
+                        ParagraphChild::Insert(ins) => {
+                            for ins_child in &ins.children {
+                                match ins_child {
+                                    InsertChild::Run(r) => {
+                                        process_children(&[ParagraphChild::Run(r.clone())], p_index, offset, p_text, highlights, underlines, bold, emphasis, highlighted_text, parser, styles, is_para_underlined, is_para_bold);
+                                    }
+                                    _ => {}
+                                }
                             }
                         }
-
-                        j = end;
+                        ParagraphChild::Hyperlink(h) => {
+                            process_children(&h.children, p_index, offset, p_text, highlights, underlines, bold, emphasis, highlighted_text, parser, styles, is_para_underlined, is_para_bold);
+                        }
+                        ParagraphChild::StructuredDataTag(sdt) => {
+                            for sdt_child in &sdt.children {
+                                match sdt_child {
+                                    StructuredDataTagChild::Run(r) => {
+                                        process_children(&[ParagraphChild::Run(r.clone())], p_index, offset, p_text, highlights, underlines, bold, emphasis, highlighted_text, parser, styles, is_para_underlined, is_para_bold);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
-            p_index += 1;
+
+            let is_para_underlined = self.para_style_has_underline(p.property.style.as_ref(), styles);
+            let is_para_bold = self.para_style_has_bold(p.property.style.as_ref(), styles);
+
+            process_children(
+                &p.children,
+                p_index as i32,
+                &mut current_utf16_offset,
+                &mut p_text,
+                &mut highlights,
+                &mut underlines,
+                &mut bold,
+                &mut emphasis,
+                &mut highlighted_text,
+                self,
+                styles,
+                is_para_underlined,
+                is_para_bold
+            );
+
+            body.push(p_text);
         }
 
-        let cite_date = self.extract_date(&cite);
+        // Merge adjacent ranges to prevent fragmentation
+        fn merge_ranges(ranges: &mut Vec<Vec<i32>>) {
+            if ranges.len() < 2 { return; }
+            ranges.sort_by(|a, b| a[0].cmp(&b[0]).then(a[1].cmp(&b[1])));
+            let mut merged = Vec::new();
+            if let Some(mut current) = ranges.first().cloned() {
+                for next in ranges.iter().skip(1) {
+                    // Bridge perfectly adjacent segments (offset 1)
+                    if next[0] == current[0] && next[1] <= current[2] + 1 { 
+                        current[2] = current[2].max(next[2]);
+                    } else {
+                        merged.push(current);
+                        current = next.clone();
+                    }
+                }
+                merged.push(current);
+            }
+            *ranges = merged;
+        }
 
+        merge_ranges(&mut highlights);
+        merge_ranges(&mut underlines);
+        merge_ranges(&mut bold);
+        merge_ranges(&mut emphasis);
+
+        let cite_date = self.extract_date(&cite);
         let mut hasher = Sha256::new();
         hasher.update(format!("{}{}{}", tag, cite, body.join("")).as_bytes());
         let id = format!("{:x}", hasher.finalize());
 
         Ok(vec![Card {
-            id,
-            tag,
-            tag_sub: tag_sub.trim().to_string(),
-            pocket: pocket.to_string(),
-            block: block.to_string(),
-            hat: hat.to_string(),
-            cite,
-            highlighted_text: highlighted_text.trim().to_string(),
-            body,
-            highlights,
-            emphasis,
-            underlines,
-            bold,
-            cite_emphasis: Vec::new(),
-            cite_date: cite_date.map(|d| d.format("%Y-%m-%d").to_string()),
+            id, tag, tag_sub: tag_sub.trim().to_string(),
+            pocket: pocket.to_string(), block: block.to_string(), hat: hat.to_string(),
+            cite, highlighted_text: highlighted_text.trim().to_string(), body,
+            highlights, emphasis, underlines, bold,
+            cite_emphasis: Vec::new(), cite_date: cite_date.map(|d| d.format("%Y-%m-%d").to_string()),
             filename: self.filename.clone(),
-            author: String::new(),
-            source: String::new(),
-            round: String::new(),
-            year: String::new(),
-            fullcite: String::new(),
-            summary: String::new(),
-            tournament: String::new(),
-            opponent: String::new(),
-            judge: String::new(),
-            team: String::new(),
-            school: String::new(),
-            event: String::new(),
-            level: String::new(),
+            author: String::new(), source: String::new(), round: String::new(), year: String::new(),
+            fullcite: String::new(), summary: String::new(), tournament: String::new(), opponent: String::new(),
+            judge: String::new(), team: String::new(), school: String::new(), event: String::new(), level: String::new(),
         }])
     }
 
     fn extract_date(&self, cite: &str) -> Option<NaiveDate> {
-        // Simplified version of the date extraction logic
-        // Looking for common date patterns like MM-DD-YY or Month DD, YYYY
         let re = Regex::new(r"(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})").unwrap();
         if let Some(cap) = re.captures(cite) {
             let m: u32 = cap[1].parse().ok()?;
             let d: u32 = cap[2].parse().ok()?;
             let mut y: i32 = cap[3].parse().ok()?;
-
-            if y < 100 {
-                if y <= 21 {
-                    y += 2000;
-                } else {
-                    y += 1900;
-                }
-            }
+            if y < 100 { y += if y <= 21 { 2000 } else { 1900 }; }
             return NaiveDate::from_ymd_opt(y, m, d);
         }
         None
@@ -238,8 +291,16 @@ impl CardParser {
     fn get_text(&self, p: &Paragraph) -> String {
         let mut text = String::new();
         for child in &p.children {
-            if let ParagraphChild::Run(r) = child {
-                text.push_str(&self.get_run_text(r));
+            match child {
+                ParagraphChild::Run(r) => text.push_str(&self.get_run_text(r)),
+                ParagraphChild::Hyperlink(h) => {
+                    for h_child in &h.children {
+                        if let ParagraphChild::Run(r) = h_child {
+                            text.push_str(&self.get_run_text(r));
+                        }
+                    }
+                }
+                _ => {}
             }
         }
         text
@@ -248,11 +309,50 @@ impl CardParser {
     fn get_run_text(&self, r: &Run) -> String {
         let mut text = String::new();
         for child in &r.children {
-            if let RunChild::Text(t) = child {
-                text.push_str(&t.text);
+            match child {
+                RunChild::Text(t) => text.push_str(&t.text),
+                RunChild::Tab(_) => text.push('\t'),
+                RunChild::Break(_) => text.push('\n'),
+                _ => {}
             }
         }
         text
+    }
+
+    fn style_has_underline(&self, style: Option<&RunStyle>, styles: &Styles) -> bool {
+        if let Some(s) = style {
+            if let Some(style_def) = styles.styles.iter().find(|def| def.style_id == s.val) {
+                return style_def.run_property.underline.is_some();
+            }
+        }
+        false
+    }
+
+    fn style_has_bold(&self, style: Option<&RunStyle>, styles: &Styles) -> bool {
+        if let Some(s) = style {
+            if let Some(style_def) = styles.styles.iter().find(|def| def.style_id == s.val) {
+                return style_def.run_property.bold.is_some();
+            }
+        }
+        false
+    }
+
+    fn para_style_has_underline(&self, style: Option<&ParagraphStyle>, styles: &Styles) -> bool {
+        if let Some(s) = style {
+            if let Some(style_def) = styles.styles.iter().find(|def| def.style_id == s.val) {
+                return style_def.run_property.underline.is_some();
+            }
+        }
+        false
+    }
+
+    fn para_style_has_bold(&self, style: Option<&ParagraphStyle>, styles: &Styles) -> bool {
+        if let Some(s) = style {
+            if let Some(style_def) = styles.styles.iter().find(|def| def.style_id == s.val) {
+                return style_def.run_property.bold.is_some();
+            }
+        }
+        false
     }
 }
 

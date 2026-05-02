@@ -373,7 +373,7 @@ header h1 {
 }
 
 .card-cite {
-  font-size: 11pt;
+  font-size: 12pt; /* Matches Verbatim standard */
   line-height: 1.4;
   color: #222;
   border-left-color: var(--accent-gold);
@@ -385,13 +385,23 @@ header h1 {
 }
 
 .card-body {
-  font-size: 11pt;
-  line-height: 1.2;
+  font-size: 8pt; /* Verbatim "Shrink" size */
+  line-height: 1.07; /* Verbatim standard spacing */
+  letter-spacing: -0.2pt; /* Verbatim "Condense" style */
   color: #333;
 }
 
 .card-body p {
   margin: 0 0 10px 0;
+}
+
+/* "Read" text (any formatting) scaled back up to normal size */
+.card-paragraph span, 
+.card-paragraph b, 
+.card-paragraph u {
+  font-size: 11pt;
+  letter-spacing: normal;
+  display: inline; /* Changed from inline-block to preserve natural spacing */
 }
 /* Search Options & Checkbox Styling */
 .search-options {

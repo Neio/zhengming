@@ -197,11 +197,12 @@ function createCardElement(card) {
   });
 
   copyBtn.addEventListener('click', () => {
-    const cleanHTML = generateVerbatimHTML(card);
+    const cleanHTML = generateVerbatimHTML(card, true); // Pass true for inlined styles
     
     const tempDiv = document.createElement('div');
     tempDiv.style.position = 'absolute';
     tempDiv.style.left = '-9999px';
+    tempDiv.style.fontFamily = 'Calibri, Arial, sans-serif'; // Word-friendly font
     tempDiv.innerHTML = cleanHTML;
     document.body.appendChild(tempDiv);
     
@@ -227,20 +228,21 @@ function createCardElement(card) {
 }
 
 /** FORMATTING LOGIC (Extracted from utils.ts in reference repo) */
-function generateStyledCite(cite, citeEmphasis = []) {
+function generateStyledCite(cite, citeEmphasis = [], isCopy = false) {
   if (!cite) return '';
   if (!citeEmphasis || citeEmphasis.length === 0) return cite;
 
   const citeObj = {};
   for (const [start, end] of citeEmphasis) {
-    citeObj[start] = `${citeObj[start] || ''}<span style="font-weight:bold;">`;
+    // Cites are 12pt bold in Verbatim
+    citeObj[start] = `${citeObj[start] || ''}<span style="font-weight:bold; font-size: 12pt;">`;
     citeObj[end] = `${citeObj[end] || ''}</span>`;
   }
 
   return cite.replace(/(?:)/g, (_, index) => citeObj[index] || '');
 }
 
-function generateStyledParagraph(card, i, paragraph) {
+function generateStyledParagraph(card, i, paragraph, isCopy = false) {
   // In the reference repo, paragraphs were offset by 2. In our Rust parser, body paragraphs are 0-indexed.
   const highlights = (card.highlights || []).filter(h => h[0] === i);
   const underlines = (card.underlines || []).filter(u => u[0] === i);
@@ -249,20 +251,25 @@ function generateStyledParagraph(card, i, paragraph) {
 
   const obj = {};
   
+  // Full Verbatim Support (Always applied for consistency between display and copy):
+  // "Read" text (highlights, etc.) is 11pt, normal spacing.
+  // "Verbatim" text (everything else) is 8pt, condensed (handled by parent style).
+  const readSize = 'font-size: 11pt; letter-spacing: normal;';
+
   for (const [_, s, e] of highlights) {
-    obj[s] = `${obj[s] || ''}<span style="background:${HIGHLIGHT_COLOR};">`;
+    obj[s] = `${obj[s] || ''}<span style="background-color:${HIGHLIGHT_COLOR}; ${readSize}">`;
     obj[e] = `${obj[e] || ''}</span>`;
   }
   for (const [_, s, e] of bolds) {
-    obj[s] = `${obj[s] || ''}<b>`;
+    obj[s] = `${obj[s] || ''}<b style="${readSize}">`;
     obj[e] = `${obj[e] || ''}</b>`;
   }
   for (const [_, s, e] of emphases) {
-    obj[s] = `${obj[s] || ''}<b><u>`;
+    obj[s] = `${obj[s] || ''}<b style="${readSize}"><u>`;
     obj[e] = `${obj[e] || ''}</u></b>`;
   }
   for (const [_, s, e] of underlines) {
-    obj[s] = `${obj[s] || ''}<u>`;
+    obj[s] = `${obj[s] || ''}<u style="${readSize}">`;
     obj[e] = `${obj[e] || ''}</u>`;
   }
 
@@ -270,16 +277,32 @@ function generateStyledParagraph(card, i, paragraph) {
 }
 
 /** RECONSTRUCTION LOGIC (VERBATIM CLEAN HTML) */
-function generateVerbatimHTML(card) {
+function generateVerbatimHTML(card, isCopy = false) {
   let html = '';
   
+  const hatStyle = isCopy ? 'style="font-size: 18pt; font-weight: bold; color: black; margin: 15px 0 5px 0;"' : '';
+  const blockStyle = isCopy ? 'style="font-size: 16pt; font-weight: bold; color: black; margin: 10px 0 5px 0;"' : '';
+  const pocketStyle = isCopy ? 'style="font-size: 14pt; font-weight: bold; font-style: italic; color: black; margin: 8px 0 5px 0;"' : '';
+  const tagStyle = isCopy ? 'style="font-size: 14pt; font-weight: bold; color: black; margin: 5px 0 5px 0;"' : '';
+  const subStyle = isCopy ? 'style="font-size: 11pt; color: #444; margin: 0 0 10px 0;"' : '';
+  const citeStyle = isCopy ? 'style="font-size: 12pt; font-weight: bold; color: black; margin: 0 0 10px 0;"' : '';
+  // Condense: letter-spacing: -0.2pt; Shrink: font-size: 8pt
+  const bodyParaStyle = isCopy ? `style="font-size: 8pt; letter-spacing: -0.2pt; line-height: ${LINE_HEIGHT}; color: #333; margin: 0 0 10px 0;"` : '';
+
+  // Include hierarchy if copying
+  if (isCopy) {
+    if (card.hat) html += `<h1 ${hatStyle}>${card.hat}</h1>`;
+    if (card.block) html += `<h2 ${blockStyle}>${card.block}</h2>`;
+    if (card.pocket) html += `<h3 ${pocketStyle}>${card.pocket}</h3>`;
+  }
+
   // Card-only format: exclude top hierarchy (Hat, Block, Pocket)
-  if (card.tag) html += `<h4>${card.tag}</h4>`;
-  if (card.tag_sub) html += `<p>${card.tag_sub}</p>`;
-  if (card.cite) html += `<h5>${generateStyledCite(card.cite, card.cite_emphasis)}</h5>`;
+  if (card.tag) html += `<h4 ${tagStyle}>${card.tag}</h4>`;
+  if (card.tag_sub) html += `<p ${subStyle}>${card.tag_sub}</p>`;
+  if (card.cite) html += `<h5 ${citeStyle}>${generateStyledCite(card.cite, card.cite_emphasis, isCopy)}</h5>`;
   
   card.body.forEach((paragraph, i) => {
-    html += `<p>${generateStyledParagraph(card, i, paragraph)}</p>`;
+    html += `<p ${bodyParaStyle}>${generateStyledParagraph(card, i, paragraph, isCopy)}</p>`;
   });
   
   return html;

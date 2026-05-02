@@ -54,6 +54,24 @@ ADMIN_PASSWORD=your_secure_password
    ```
 2. Open `http://localhost:3000` in your browser.
 
+### Running with Docker (Local)
+
+If you prefer to run the application in a containerized environment:
+
+1. **Build the binaries**:
+   ```bash
+   ./scripts/build_all.sh
+   ```
+
+2. **Start the service**:
+   ```bash
+   docker-compose up --build
+   ```
+   > [!TIP]
+   > Always use the `--build` flag when you have modified the source code. Docker Compose will otherwise reuse the existing image, and your latest changes won't be reflected in the running container.
+
+2. Access the app at `http://localhost:3000`.
+
 ### Admin Dashboard
 
 Access the administrative interface at `http://localhost:3000/admin`. 
