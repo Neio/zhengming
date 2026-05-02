@@ -83,6 +83,8 @@ fn create_app(state: AppState) -> Router {
     let admin_api = Router::new()
         .route("/upload", post(upload))
         .route("/progress/:id", get(get_progress))
+        .route("/admin/clear-index", post(clear_index))
+        .route("/admin/delete-batch", post(delete_batch))
         .layer(DefaultBodyLimit::disable())
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -551,6 +553,37 @@ async fn upload(State(state): State<AppState>, mut multipart: Multipart) -> Resp
 }
 
 #[derive(Deserialize)]
+struct DeleteBatchRequest {
+    field: String,
+    value: String,
+}
+
+async fn clear_index(State(state): State<AppState>) -> Response {
+    match state.index.clear_index() {
+        Ok(_) => (StatusCode::OK, "Index cleared").into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to clear index: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_batch(
+    State(state): State<AppState>,
+    Json(req): Json<DeleteBatchRequest>,
+) -> Response {
+    match state.index.delete_by_term(&req.field, &req.value) {
+        Ok(_) => (StatusCode::OK, "Batch deleted").into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to delete batch: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
 struct QueryParams {
     q: String,
     #[serde(default = "default_size")]
@@ -708,6 +741,36 @@ mod tests {
             .add_header("x-nonce", &nonce)
             .await;
         response.assert_status(StatusCode::CONFLICT); // Nonce reuse
+    }
+
+    #[tokio::test]
+    async fn test_clear_index() {
+        let index_path = tempfile::tempdir().unwrap();
+        let state = AppState {
+            index: Arc::new(TantivyIndex::new(index_path.path().to_str().unwrap()).unwrap()),
+            jobs: Arc::new(RwLock::new(HashMap::new())),
+            admin_password: Some("testpass".to_string()),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            used_nonces: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        let server = TestServer::new(create_app(state)).unwrap();
+
+        // 1. Login to get cookie
+        let response = server.post("/api/admin/login")
+            .json(&serde_json::json!({ "password": "testpass" }))
+            .await;
+        let cookie = response.cookie("admin_session");
+
+        // 2. Clear index (requires auth + nonce)
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let response = server.post("/api/admin/clear-index")
+            .add_cookie(cookie)
+            .add_header("x-nonce", &nonce)
+            .await;
+        
+        response.assert_status(StatusCode::OK);
+        assert_eq!(response.text(), "Index cleared");
     }
 
     #[test]

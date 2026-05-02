@@ -92,6 +92,22 @@ impl TantivyIndex {
         self.add_cards_internal(index_writer, cards)
     }
 
+    pub fn clear_index(&self) -> Result<(), Box<dyn Error>> {
+        let mut index_writer: IndexWriter<TantivyDocument> = self.index.writer(100_000_000)?;
+        index_writer.delete_all_documents()?;
+        index_writer.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_by_term(&self, field_name: &str, value: &str) -> Result<(), Box<dyn Error>> {
+        let field = self.schema.get_field(field_name)?;
+        let term = tantivy::Term::from_field_text(field, value);
+        let mut index_writer: IndexWriter<TantivyDocument> = self.index.writer(100_000_000)?;
+        index_writer.delete_term(term);
+        index_writer.commit()?;
+        Ok(())
+    }
+
     fn add_cards_internal(
         &self,
         index_writer: &mut IndexWriter,

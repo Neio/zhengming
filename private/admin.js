@@ -41,8 +41,18 @@ const modalFilename = document.getElementById('modal-filename');
 const modalYearInput = document.getElementById('modal-year-input');
 const modalCancel = document.getElementById('modal-cancel');
 const modalConfirm = document.getElementById('modal-confirm');
+const confirmModal = document.getElementById('confirm-modal');
+const confirmTitle = document.getElementById('confirm-title');
+const confirmMessage = document.getElementById('confirm-message');
+const confirmCancel = document.getElementById('confirm-cancel');
+const confirmDo = document.getElementById('confirm-do');
+const categorySelect = document.getElementById('mgmt-category-select');
+const refreshMgmtBtn = document.getElementById('refresh-mgmt-btn');
+const categoryListContainer = document.getElementById('category-list-container');
+const clearIndexBtn = document.getElementById('clear-index-btn');
 
 let pendingFile = null;
+let onConfirm = null;
 
 // --- Logout ---
 async function handleLogout() {
@@ -58,6 +68,29 @@ async function handleLogout() {
 }
 
 if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+
+/** CONFIRMATION MODAL */
+function showConfirm(title, message, callback) {
+  confirmTitle.textContent = title;
+  confirmMessage.textContent = message;
+  onConfirm = callback;
+  confirmModal.style.display = 'flex';
+}
+
+if (confirmCancel) {
+  confirmCancel.addEventListener('click', () => {
+    confirmModal.style.display = 'none';
+    onConfirm = null;
+  });
+}
+
+if (confirmDo) {
+  confirmDo.addEventListener('click', () => {
+    if (onConfirm) onConfirm();
+    confirmModal.style.display = 'none';
+    onConfirm = null;
+  });
+}
 
 /** UPLOAD LOGIC */
 if (uploadZone) {
@@ -219,6 +252,9 @@ async function updateStats() {
     if (statCount) statCount.textContent = stats.num_docs.toLocaleString();
     if (statSize) statSize.textContent = formatBytes(stats.index_size_bytes);
     if (statPending) statPending.textContent = (stats.pending_cards || 0).toLocaleString();
+    
+    // Update management list if stats are refreshed
+    updateManagementList();
   } catch (e) {
     console.error('Failed to fetch stats:', e);
   }
@@ -232,5 +268,129 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+if (clearIndexBtn) {
+  clearIndexBtn.addEventListener('click', () => {
+    showConfirm(
+      'Clear Database?',
+      'This will PERMANENTLY delete all indexed cards in the database. This action is irreversible.',
+      async () => {
+        showUploadStatus('Clearing database...', null);
+        try {
+          const res = await fetch('/api/admin/clear-index', {
+            method: 'POST',
+            headers: authHeaders(),
+          });
+          if (handleAuthError(res)) return;
+          if (res.ok) {
+            showUploadStatus('Database cleared successfully.', true);
+            updateStats();
+          } else {
+            const err = await res.text();
+            showUploadStatus(`Failed to clear database: ${err}`, false);
+          }
+        } catch (e) {
+          showUploadStatus(`Network error: ${e.message}`, false);
+        }
+      }
+    );
+  });
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
 // Initial stats fetch
 updateStats();
+const categoryToField = {
+  years: 'year',
+  tournaments: 'tournament',
+  schools: 'school',
+  rounds: 'round',
+  events: 'event'
+};
+
+async function updateManagementList() {
+  if (!categorySelect || !categoryListContainer) return;
+  const category = categorySelect.value;
+  const field = categoryToField[category];
+  
+  try {
+    const res = await fetch('/api/stats');
+    if (!res.ok) return;
+    const stats = await res.json();
+    
+    if (!stats.insights || !stats.insights[category]) {
+      categoryListContainer.innerHTML = `<div style="padding: 20px; text-align: center; color: #888;">Insights not available for this category.</div>`;
+      return;
+    }
+
+    const buckets = stats.insights[category].buckets;
+    
+    if (!buckets || buckets.length === 0) {
+      categoryListContainer.innerHTML = `<div style="padding: 30px; text-align: center; color: #888; background:#fcfcfc; border-radius:12px;">No cards found for this category.</div>`;
+      return;
+    }
+
+    let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+    buckets.forEach(bucket => {
+      const displayKey = bucket.key || '(Not Specified)';
+      const safeValue = bucket.key.replace(/'/g, "\\'");
+      
+      html += `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #fcfcfc; border-radius: 10px; border: 1px solid #eee;">
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 20px;">
+            <span style="font-weight: 600; color: #333; font-size: 0.95rem;">${displayKey}</span>
+            <div style="font-size: 0.75rem; color: #999; margin-top: 2px; font-weight: 600;">${bucket.doc_count.toLocaleString()} cards</div>
+          </div>
+          <button onclick="window.deleteBatch('${field}', '${safeValue}')" style="background: #fff; border: 1px solid #eee; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; color: #c41e3a; font-weight: 800; transition: all 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">Delete Batch</button>
+        </div>
+      `;
+    });
+    html += '</div>';
+    categoryListContainer.innerHTML = html;
+  } catch (e) {
+    console.error('Failed to update management list:', e);
+  }
+}
+
+window.deleteBatch = function(field, value) {
+  const displayValue = value || '(Not Specified)';
+  showConfirm(
+    'Delete Batch?',
+    `Are you sure you want to delete all cards where ${field} is "${displayValue}"? This action cannot be undone.`,
+    async () => {
+      showUploadStatus(`Deleting batch for ${field}="${displayValue}"...`, null);
+      try {
+        const res = await fetch('/api/admin/delete-batch', {
+          method: 'POST',
+          headers: {
+            ...authHeaders(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ field, value }),
+        });
+        if (handleAuthError(res)) return;
+        if (res.ok) {
+          showUploadStatus(`Successfully deleted all cards for ${field}="${displayValue}"`, true);
+          updateStats(); // This will trigger updateManagementList()
+        } else {
+          const err = await res.text();
+          showUploadStatus(`Failed to delete: ${err}`, false);
+        }
+      } catch (e) {
+        showUploadStatus(`Network error: ${e.message}`, false);
+      }
+    }
+  );
+};
+
+if (categorySelect) categorySelect.addEventListener('change', updateManagementList);
+if (refreshMgmtBtn) refreshMgmtBtn.addEventListener('click', updateManagementList);
+
+// Initial list population
+setTimeout(updateManagementList, 500);
