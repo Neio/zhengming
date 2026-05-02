@@ -155,7 +155,30 @@ function createCardElement(card) {
   if (card.summary) {
     const summary = document.createElement('p');
     summary.className = 'card-summary';
-    summary.innerHTML = `<strong>Summary:</strong> ${card.summary}`;
+    
+    const maxLength = 300;
+    if (card.summary.length > maxLength) {
+      const truncated = card.summary.substring(0, maxLength);
+      const full = card.summary;
+      
+      summary.innerHTML = `<strong>Summary:</strong> <span class="summary-text">${truncated}</span>`;
+      
+      const expandBtn = document.createElement('button');
+      expandBtn.className = 'summary-expand-btn';
+      expandBtn.textContent = '...';
+      summary.appendChild(expandBtn);
+      
+      let isExpanded = false;
+      expandBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        isExpanded = !isExpanded;
+        const textSpan = summary.querySelector('.summary-text');
+        textSpan.textContent = isExpanded ? full : truncated;
+        expandBtn.textContent = isExpanded ? ' (less)' : '...';
+      });
+    } else {
+      summary.innerHTML = `<strong>Summary:</strong> ${card.summary}`;
+    }
     contentWrapper.appendChild(summary);
   }
   
