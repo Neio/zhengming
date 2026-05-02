@@ -158,9 +158,16 @@ impl CardParser {
                             let is_underlined = is_para_underlined || 
                                                r.run_property.underline.is_some() || 
                                                parser.style_has_underline(r.run_property.style.as_ref(), styles);
-                            let is_bold = is_para_bold || 
-                                         r.run_property.bold.is_some() || 
-                                         parser.style_has_bold(r.run_property.style.as_ref(), styles);
+                            
+                            // More restrictive bold check: Ignore bolding from styles that contain "Underline"
+                            let mut is_bold = is_para_bold || r.run_property.bold.is_some();
+                            if !is_bold {
+                                if let Some(s) = &r.run_property.style {
+                                    if !s.val.to_lowercase().contains("underline") {
+                                        is_bold = parser.style_has_bold(r.run_property.style.as_ref(), styles);
+                                    }
+                                }
+                            }
 
                             if is_highlighted {
                                 highlights.push(vec![p_index, start, end]);
@@ -174,9 +181,9 @@ impl CardParser {
                                 bold.push(vec![p_index, start, end]);
                             }
                             
-                            // Check for "Emphasis" style specifically as it's often used for Verbatim
+                            // Check for "Emphasis" style specifically
                             if let Some(style) = &r.run_property.style {
-                                if style.val == "Emphasis" || style.val == "Underline" {
+                                if style.val == "Emphasis" {
                                     emphasis.push(vec![p_index, start, end]);
                                 }
                             }
@@ -213,7 +220,17 @@ impl CardParser {
             }
 
             let is_para_underlined = self.para_style_has_underline(p.property.style.as_ref(), styles);
-            let is_para_bold = self.para_style_has_bold(p.property.style.as_ref(), styles);
+            // Disable paragraph-level bolding for common styles to prevent accidental bolding of entire cards
+            let is_para_bold = if let Some(s) = &p.property.style {
+                let s_lower = s.val.to_lowercase();
+                if s_lower.contains("normal") || s_lower.contains("verbatim") || s_lower.contains("body") {
+                    false
+                } else {
+                    self.para_style_has_bold(p.property.style.as_ref(), styles)
+                }
+            } else {
+                false
+            };
 
             process_children(
                 &p.children,
