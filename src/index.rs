@@ -3,11 +3,11 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 use tantivy::aggregation::agg_req::Aggregations;
-use tantivy::aggregation::AggregationCollector;
+use tantivy::aggregation::{AggregationCollector, AggregationLimitsGuard, AggContextParams};
 use tantivy::collector::TopDocs;
 use tantivy::query::{AllQuery, QueryParser};
 use tantivy::schema::*;
-use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
+use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term, DocAddress};
 
 pub struct TantivyIndex {
     index: Index,
@@ -101,7 +101,7 @@ impl TantivyIndex {
 
     pub fn delete_by_term(&self, field_name: &str, value: &str) -> Result<(), Box<dyn Error>> {
         let field = self.schema.get_field(field_name)?;
-        let term = tantivy::Term::from_field_text(field, value);
+        let term = Term::from_field_text(field, value);
         let mut index_writer: IndexWriter<TantivyDocument> = self.index.writer(100_000_000)?;
         index_writer.delete_term(term);
         index_writer.commit()?;
@@ -173,7 +173,7 @@ impl TantivyIndex {
             doc.add_text(full_json_field, &json);
 
             // Deduplication: Delete any existing document with this ID
-            let id_term = tantivy::Term::from_field_text(id_field, &card.id);
+            let id_term = Term::from_field_text(id_field, &card.id);
             index_writer.delete_term(id_term);
 
             index_writer.add_document(doc)?;
@@ -209,7 +209,7 @@ impl TantivyIndex {
         let query_parser = QueryParser::for_index(&self.index, search_fields);
 
         let query = query_parser.parse_query(q)?;
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(limit))?;
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(limit).order_by_score())?;
 
         let mut results = Vec::new();
         for (_score, doc_address) in top_docs {
@@ -233,7 +233,7 @@ impl TantivyIndex {
         let query_parser = QueryParser::for_index(&self.index, vec![id_field]);
         let query = query_parser.parse_query(&format!("id:\"{}\"", id))?;
 
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(1))?;
+        let top_docs: Vec<(f32, DocAddress)> = searcher.search(&query, &TopDocs::with_limit(1).order_by_score())?;
         if let Some((_score, doc_address)) = top_docs.first() {
             let retrieved_doc: TantivyDocument = searcher.doc(*doc_address)?;
             let full_json_field = self.schema.get_field("full_json")?;
@@ -283,7 +283,10 @@ impl TantivyIndex {
 
         let collector = AggregationCollector::from_aggs(
             agg_req,
-            tantivy::aggregation::AggregationLimits::default(),
+            AggContextParams {
+                limits: AggregationLimitsGuard::default(),
+                ..Default::default()
+            },
         );
         let agg_res = searcher.search(&AllQuery, &collector)?;
 
