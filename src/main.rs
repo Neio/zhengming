@@ -9,7 +9,7 @@ use crate::index::TantivyIndex;
 use crate::parser::CardParser;
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -106,7 +106,39 @@ fn create_app(state: AppState) -> Router {
         .route("/admin.js", get(admin_js_handler))
         .nest("/api", api_router)
         .fallback_service(ServeDir::new("public"))
+        .layer(middleware::from_fn(cache_control_middleware))
         .with_state(state)
+}
+
+async fn cache_control_middleware(request: Request, next: Next) -> Response {
+    let path = request.uri().path().to_string();
+    let has_version = request.uri().query().map(|q| q.contains("v=")).unwrap_or(false);
+    
+    let mut response = next.run(request).await;
+
+    if path.starts_with("/api/") || path.starts_with("/admin") {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store, no-cache, must-revalidate"),
+        );
+    } else if let Some(content_type) = response.headers().get(header::CONTENT_TYPE) {
+        let ct = content_type.to_str().unwrap_or_default();
+        if ct.contains("javascript") || ct.contains("css") {
+            if has_version {
+                response.headers_mut().insert(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("public, max-age=31536000, immutable"),
+                );
+            } else {
+                response.headers_mut().insert(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("public, max-age=3600"),
+                );
+            }
+        }
+    }
+
+    response
 }
 
 // --- Admin Auth Types ---
@@ -196,11 +228,8 @@ async fn admin_redirect_handler(
         if let Some(created_at) = sessions.get(&t) {
             if created_at.elapsed() < std::time::Duration::from_secs(86400) {
                 // Valid session, serve the admin page from PRIVATE
-                return (
-                    [(axum::http::header::CACHE_CONTROL, "no-store")],
-                    axum::response::Html(
-                        std::fs::read_to_string("private/admin.html").unwrap_or_else(|_| "Admin file missing".to_string())
-                    )
+                return axum::response::Html(
+                    std::fs::read_to_string("private/admin.html").unwrap_or_else(|_| "Admin file missing".to_string())
                 ).into_response();
             }
         }
@@ -222,10 +251,7 @@ async fn admin_js_handler(
             if created_at.elapsed() < std::time::Duration::from_secs(86400) {
                 // Valid session, serve the admin JS from PRIVATE
                 return (
-                    [
-                        (axum::http::header::CONTENT_TYPE, "application/javascript"),
-                        (axum::http::header::CACHE_CONTROL, "no-store")
-                    ],
+                    [(axum::http::header::CONTENT_TYPE, "application/javascript")],
                     std::fs::read_to_string("private/admin.js").unwrap_or_default()
                 ).into_response();
             }
