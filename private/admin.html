@@ -144,6 +144,97 @@
       letter-spacing: 0.05rem;
       margin-top: 4px;
     }
+
+    /* Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 40px;
+      border-radius: 24px;
+      width: 90%;
+      max-width: 450px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+
+    .modal-content h3 {
+      margin-top: 0;
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+    }
+
+    .modal-content p {
+      color: #666;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    .year-input-wrapper {
+      margin-bottom: 30px;
+    }
+
+    .year-confirm-input {
+      width: 100%;
+      padding: 16px;
+      font-size: 1.5rem;
+      text-align: center;
+      border: 2px solid #eee;
+      border-radius: 12px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 800;
+      color: #c41e3a;
+      outline: none;
+      transition: border-color 0.3s;
+    }
+
+    .year-confirm-input:focus {
+      border-color: #c41e3a;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .modal-btn {
+      flex: 1;
+      padding: 16px;
+      border-radius: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      border: none;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.3s;
+    }
+
+    .btn-cancel {
+      background: #f0f0f0;
+      color: #666;
+    }
+
+    .btn-confirm {
+      background: #c41e3a;
+      color: white;
+    }
+
+    .btn-confirm:hover {
+      background: #a31830;
+      transform: translateY(-2px);
+    }
   </style>
 </head>
 <body>
@@ -187,6 +278,24 @@
         </div>
       </div>
       <a href="/stats.html" style="display:block; margin-top:20px; color:#c41e3a; font-weight:800; text-decoration:none;">View Detailed Insights →</a>
+    </div>
+  </div>
+
+  <!-- Year Confirmation Modal -->
+  <div id="year-modal" class="modal-overlay">
+    <div class="modal-content">
+      <h3>Confirm Year</h3>
+      <p id="modal-filename" style="font-weight:600; word-break: break-all;"></p>
+      <p>Confirm the year for this evidence. This will be applied to all cards in the file.</p>
+      
+      <div class="year-input-wrapper">
+        <input type="number" id="modal-year-input" class="year-confirm-input" placeholder="YYYY" min="1900" max="2100">
+      </div>
+
+      <div class="modal-actions">
+        <button id="modal-cancel" class="modal-btn btn-cancel">Cancel</button>
+        <button id="modal-confirm" class="modal-btn btn-confirm">Confirm & Upload</button>
+      </div>
     </div>
   </div>
 

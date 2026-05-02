@@ -35,6 +35,15 @@ const statCount = document.getElementById('stat-count');
 const statSize = document.getElementById('stat-size');
 const statPending = document.getElementById('stat-pending');
 
+// Modal Elements
+const yearModal = document.getElementById('year-modal');
+const modalFilename = document.getElementById('modal-filename');
+const modalYearInput = document.getElementById('modal-year-input');
+const modalCancel = document.getElementById('modal-cancel');
+const modalConfirm = document.getElementById('modal-confirm');
+
+let pendingFile = null;
+
 // --- Logout ---
 async function handleLogout() {
   try {
@@ -65,7 +74,7 @@ if (uploadZone) {
     e.preventDefault();
     uploadZone.classList.remove('dragover');
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleUpload(e.dataTransfer.files[0]);
+      initiateFileUpload(e.dataTransfer.files[0]);
     }
   });
 }
@@ -73,21 +82,54 @@ if (uploadZone) {
 if (fileInput) {
   fileInput.addEventListener('change', (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleUpload(e.target.files[0]);
+      initiateFileUpload(e.target.files[0]);
     }
   });
 }
 
-async function handleUpload(file) {
+function initiateFileUpload(file) {
   if (!file.name.endsWith('.docx') && !file.name.endsWith('.zip') && !file.name.endsWith('.csv')) {
     showUploadStatus('Only .docx, .zip, and .csv files are supported.', false);
     return;
   }
 
-  showUploadStatus('Initiating upload...', null);
+  pendingFile = file;
+  
+  // Try to detect year from filename
+  const yearMatch = file.name.match(/(?:^|[^0-9])(20\d{2}|19\d{2})(?:$|[^0-9])/);
+  const detectedYear = yearMatch ? yearMatch[1] : '';
+  
+  // Show modal
+  modalFilename.textContent = file.name;
+  modalYearInput.value = detectedYear;
+  yearModal.style.display = 'flex';
+  modalYearInput.focus();
+}
+
+modalCancel.addEventListener('click', () => {
+  yearModal.style.display = 'none';
+  pendingFile = null;
+  fileInput.value = '';
+});
+
+modalConfirm.addEventListener('click', () => {
+  const year = modalYearInput.value.trim();
+  yearModal.style.display = 'none';
+  if (pendingFile) {
+    handleUpload(pendingFile, year);
+    pendingFile = null;
+    fileInput.value = '';
+  }
+});
+
+async function handleUpload(file, year) {
+  showUploadStatus(`Initiating upload for ${file.name}...`, null);
 
   const formData = new FormData();
   formData.append('file', file);
+  if (year) {
+    formData.append('year', year);
+  }
 
   try {
     const res = await fetch('/api/upload', {

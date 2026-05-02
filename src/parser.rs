@@ -7,11 +7,12 @@ use sha2::{Digest, Sha256};
 pub struct CardParser {
     filename: String,
     content: Vec<u8>,
+    year: Option<String>,
 }
 
 impl CardParser {
-    pub fn new(filename: String, content: Vec<u8>) -> Self {
-        Self { filename, content }
+    pub fn new(filename: String, content: Vec<u8>, year: Option<String>) -> Self {
+        Self { filename, content, year }
     }
 
     pub fn parse(&self) -> Result<Vec<Card>, Box<dyn std::error::Error + Send + Sync>> {
@@ -270,7 +271,8 @@ impl CardParser {
             highlights, emphasis, underlines, bold,
             cite_emphasis: Vec::new(), cite_date: cite_date.map(|d| d.format("%Y-%m-%d").to_string()),
             filename: self.filename.clone(),
-            author: String::new(), source: String::new(), round: String::new(), year: String::new(),
+            author: String::new(), source: String::new(), round: String::new(), 
+            year: self.year.clone().unwrap_or_default(),
             fullcite: String::new(), summary: String::new(), tournament: String::new(), opponent: String::new(),
             judge: String::new(), team: String::new(), school: String::new(), event: String::new(), level: String::new(),
         }])
@@ -370,7 +372,7 @@ mod tests {
             return;
         }
         let content = fs::read(path).expect("Failed to read test docx");
-        let parser = CardParser::new("1nc.docx".to_string(), content);
+        let parser = CardParser::new("1nc.docx".to_string(), content, None);
 
         let res = parser.parse();
         assert!(res.is_ok(), "Docx parsing failed");
