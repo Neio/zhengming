@@ -33,6 +33,7 @@ pub struct Card {
     pub school: String,
     pub event: String,
     pub level: String,
+    pub version: String,
 }
 
 impl Card {
@@ -67,6 +68,7 @@ impl Card {
             school: String::new(),
             event: String::new(),
             level: String::new(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 }

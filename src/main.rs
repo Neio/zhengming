@@ -822,7 +822,7 @@ mod tests {
                     std::io::Read::read_to_end(&mut file, &mut buf)
                         .expect("Failed to read inside zip");
 
-                    let parser = CardParser::new(entry_name, buf);
+                    let parser = CardParser::new(entry_name, buf, None);
                     let res = parser.parse();
                     assert!(res.is_ok(), "Should parse docx inside zip");
                 }

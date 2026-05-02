@@ -311,7 +311,8 @@ const categoryToField = {
   tournaments: 'tournament',
   schools: 'school',
   rounds: 'round',
-  events: 'event'
+  events: 'event',
+  versions: 'version'
 };
 
 async function updateManagementList() {

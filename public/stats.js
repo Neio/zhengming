@@ -35,6 +35,10 @@ function renderStats(data) {
     if (data.insights && data.insights.events) {
         renderBars('events-chart', data.insights.events.buckets, data.num_docs);
     }
+
+    if (data.insights && data.insights.versions) {
+        renderBars('versions-chart', data.insights.versions.buckets, data.num_docs);
+    }
 }
 
 function renderBars(containerId, buckets, total) {

@@ -292,6 +292,7 @@ impl CardParser {
             year: self.year.clone().unwrap_or_default(),
             fullcite: String::new(), summary: String::new(), tournament: String::new(), opponent: String::new(),
             judge: String::new(), team: String::new(), school: String::new(), event: String::new(), level: String::new(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         }])
     }
 

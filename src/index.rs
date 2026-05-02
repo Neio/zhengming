@@ -5,9 +5,11 @@ use std::path::Path;
 use tantivy::aggregation::agg_req::Aggregations;
 use tantivy::aggregation::{AggregationCollector, AggregationLimitsGuard, AggContextParams};
 use tantivy::collector::TopDocs;
-use tantivy::query::{AllQuery, QueryParser};
+use tantivy::query::{AllQuery, BooleanQuery, RangeQuery, Occur, QueryParser};
 use tantivy::schema::*;
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term, DocAddress};
+use std::ops::Bound;
+
 
 pub struct TantivyIndex {
     index: Index,
@@ -50,11 +52,26 @@ impl TantivyIndex {
         schema_builder.add_text_field("school", STRING | FAST);
         schema_builder.add_text_field("event", STRING | FAST);
         schema_builder.add_text_field("level", STRING | FAST);
+        schema_builder.add_text_field("version", STRING | FAST);
         schema_builder.add_text_field("full_json", STORED);
 
         let schema = schema_builder.build();
 
         let index = if path.join("meta.json").exists() {
+            // Auto-Migrate: Patch the schema in meta.json before opening
+            let meta_path = path.join("meta.json");
+            if let Ok(meta_json) = fs::read_to_string(&meta_path) {
+                if let Ok(mut meta) = serde_json::from_str::<serde_json::Value>(&meta_json) {
+                    if let Some(schema_val) = meta.get_mut("schema") {
+                        let new_schema_val = serde_json::to_value(&schema)?;
+                        if *schema_val != new_schema_val {
+                            tracing::info!("🚀 Migrating database schema at '{}' to include new fields...", index_path);
+                            *schema_val = new_schema_val;
+                            fs::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
+                        }
+                    }
+                }
+            }
             Index::open_in_dir(path)?
         } else {
             Index::create_in_dir(path, schema.clone())?
@@ -101,9 +118,27 @@ impl TantivyIndex {
 
     pub fn delete_by_term(&self, field_name: &str, value: &str) -> Result<(), Box<dyn Error>> {
         let field = self.schema.get_field(field_name)?;
-        let term = Term::from_field_text(field, value);
         let mut index_writer: IndexWriter<TantivyDocument> = self.index.writer(100_000_000)?;
-        index_writer.delete_term(term);
+
+        if field_name == "version" && value == "Legacy" {
+            // Special Case: Delete documents missing the version field
+            // Programmatically build a query: All Documents MINUS Documents with a version
+            let all_query = Box::new(AllQuery);
+            // Matches any document that has a value in the version field (version >= "")
+            let has_version_query = Box::new(RangeQuery::new(
+                Bound::Included(Term::from_field_text(field, "")),
+                Bound::Unbounded,
+            ));
+            let query = BooleanQuery::new(vec![
+                (Occur::Must, all_query),
+                (Occur::MustNot, has_version_query),
+            ]);
+            index_writer.delete_query(Box::new(query))?;
+        } else {
+            let term = Term::from_field_text(field, value);
+            index_writer.delete_term(term);
+        }
+
         index_writer.commit()?;
         Ok(())
     }
@@ -168,6 +203,11 @@ impl TantivyIndex {
             doc.add_text(school_field, &card.school);
             doc.add_text(event_field, &card.event);
             doc.add_text(level_field, &card.level);
+            
+            // Only add version if the actual index schema supports it
+            if let Ok(v_field) = self.index.schema().get_field("version") {
+                doc.add_text(v_field, &card.version);
+            }
 
             let json = serde_json::to_string(card)?;
             doc.add_text(full_json_field, &json);
@@ -278,6 +318,9 @@ impl TantivyIndex {
             },
             "events": {
                 "terms": { "field": "event", "size": 10 }
+            },
+            "versions": {
+                "terms": { "field": "version", "size": 10, "missing": "Legacy" }
             }
         }))?;
 
@@ -358,6 +401,7 @@ mod tests {
             school: "School B".to_string(),
             event: "Policy".to_string(),
             level: "Varsity".to_string(),
+            version: "1.2.0".to_string(),
         };
 
         index.add_cards(&[card]).expect("Failed to add card");
